@@ -1,4 +1,4 @@
-{-# LANGUAGE OverlappingInstances, IncoherentInstances #-}
+{-# LANGUAGE OverlappingInstances, TypeSynonymInstances, FlexibleInstances #-}
 
 module Format where
 import Data.List
