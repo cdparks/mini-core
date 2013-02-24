@@ -108,12 +108,24 @@ pBetween lhs p rhs = pThen (flip const) lhs (pThen const p rhs)
 pOneOrMoreWithSep :: Parser a -> Parser b -> Parser [a]
 pOneOrMoreWithSep p1 p2 = pThen (:) p1 (pZeroOrMore (pThen (flip const) p2 p1))
 
+{- Interface to parser -}
+
+-- Parse String into abstract syntax tree
+parse :: String -> Program
+parse = syntax . scan 0
+
+-- Parse program and then print it back out
+showParse :: String -> String
+showParse = showProgram . parse
+
 -- Parse list of tokens into abstract syntax tree
 syntax :: [Token] -> Program
 syntax = firstParse . pProgram where
     firstParse ((program, []):_) = program
     firstParse (parse:rest)      = firstParse rest
     firstParse _                 = error "Syntax error"
+
+{- Productions start below -}
 
 -- Program -> Combinator [; Combinator]*
 pProgram :: Parser Program
@@ -126,35 +138,35 @@ pCombinator = pThen build pVar pArgs where
     pBody = pThen (flip const) (pLit "=") pExpr
     build var (names, expr) = (var, names, expr)
 
--- Atom | Let | LetRec | Case | Lambda | OrExpr
+-- Atom -> Let | LetRec | Case | Lambda | OrExpr
 pExpr :: Parser Expr
 pExpr = pLet
       + pOrExpr
       + pCase
       + pLambda
 
--- (let | letrec) var = Expr [; var = Expr]* in Expr
+-- Let -> (let | letrec) Bindings LetBody
 pLet = pThen build keyword rest where
     keyword = pApply (pLit "let" + pLit "letrec") (=="letrec")
     rest    = pThen (,) pBindings pLetBody
     build isRec (bindings, expr) = Let isRec bindings expr
 
--- var = Expr [; var = Expr]*
+-- Bindings -> var = Expr [; var = Expr]*
 pBindings = pOneOrMoreWithSep pBinding $ pLit ";" where
     pBinding = pThen (,) pVar $ pThen (flip const) (pLit "=") pExpr
 
--- in Expr
+-- LetBody -> in Expr
 pLetBody :: Parser Expr
 pLetBody = pThen (flip const) (pLit "in") pExpr
 
--- case Expr of Alts
+-- Case -> case Expr of Alts
 pCase :: Parser Expr
 pCase = pThen build keyword rest where
     keyword = pLit "case"
     rest    = pThen (,) pExpr $ pThen (flip const) (pLit "of") pAlts
     build _ (expr, alts) = Case expr alts
 
--- <tag> arg* -> Expr
+-- Alts -> <tag> arg* -> Expr [; <tag> arg* -> Expr]*
 pAlts :: Parser [Alt]
 pAlts = pOneOrMoreWithSep pAlt $ pLit ";" where
     pAlt  = pThen build pTag pArgs
@@ -163,7 +175,7 @@ pAlts = pOneOrMoreWithSep pAlt $ pLit ";" where
     pBody = pThen (flip const) (pLit "->") pExpr
     build tag (args, body) = (tag, args, body)
 
--- \var+ -> Expr
+-- Lambda -> \var+ -> Expr
 pLambda :: Parser Expr
 pLambda = pThen build keyword rest where
     keyword = pLit "\\"
@@ -183,19 +195,22 @@ assembleOp :: Expr -> PartialExpr -> Expr
 assembleOp e1 NoOp            = e1
 assembleOp e1 (FoundOp op e2) = App (App (Var op) e1) e2
 
--- AndExpr [|| OrExpr]
+-- OrExpr -> AndExpr [|| OrExpr]
+--        -> nil
 pOrExpr :: Parser Expr
 pOrExpr = pThen assembleOp pAndExpr pOrPartial where
     pOrPartial = pThen FoundOp (pLit "||") pOrExpr
                + pEmpty NoOp
 
--- RelExpr [&& AndExpr]
+-- AndExpr -> RelExpr [&& AndExpr]
+--         -> nil
 pAndExpr :: Parser Expr
 pAndExpr = pThen assembleOp pRelExpr pAndPartial where
     pAndPartial = pThen FoundOp (pLit "&&") pAndExpr
                 + pEmpty NoOp
 
--- pAddExpr [(< | > | <= | >= | == | /=) pAddExpr]
+-- pRelExpr -> pAddExpr [(< | > | <= | >= | == | /=) pAddExpr]
+--          -> nil
 pRelExpr :: Parser Expr
 pRelExpr = pThen assembleOp pAddExpr pRelPartial where
     pRelPartial = pThen FoundOp relOps pAddExpr
@@ -207,35 +222,37 @@ pRelExpr = pThen assembleOp pAddExpr pRelPartial where
            + pLit "=="
            + pLit "/="
 
--- pMulExpr [+ pAddExpr]
--- pAddExpr [- pAddExpr]
+-- pAddExpr -> pMulExpr [+ pAddExpr]
+-- pAddExpr -> pAddExpr [- pAddExpr]
+--          -> nil
 pAddExpr :: Parser Expr
 pAddExpr = pThen assembleOp pMulExpr pAddPartial where
 pAddPartial = pThen FoundOp (pLit "+") pAddExpr
             + pThen FoundOp (pLit "-") pMulExpr
             + pEmpty NoOp
 
--- pAtom [* pMulExpr]
--- pAtom [/ pAtom]
+-- pMulExpr -> pAtom [* pMulExpr]
+-- pMulExpr -> pAtom [/ pAtom]
+--          -> nil
 pMulExpr :: Parser Expr
 pMulExpr = pThen assembleOp pAppExpr pMulPartial where
 pMulPartial = pThen FoundOp (pLit "*") pMulExpr
             + pThen FoundOp (pLit "/") pAppExpr
             + pEmpty NoOp
 
--- Atom [Atom]*
+-- Application -> Atom [Atom]*
 pAppExpr :: Parser Expr
 pAppExpr = pApply (pOneOrMore pAtom) makeSpine where
     makeSpine (x:xs) = foldl App x xs
 
--- num | var | Constructor | ( Expr )
+-- Atom -> num | var | Constructor | ( Expr )
 pAtom :: Parser Expr
 pAtom = pApply pVar Var
       + pConstructor
       + pBetween (pLit "(") pExpr (pLit ")")
       + pApply pNum Num
 
--- Pack { tag , arity }
+-- Constructor -> Pack { tag , arity }
 pConstructor :: Parser Expr
 pConstructor = pThen build pPack pBracketed where
     pPack = pLit "Pack"
@@ -245,8 +262,3 @@ pConstructor = pThen build pPack pBracketed where
     pArity = pThen (flip const) (pLit ",") pNum
     build _ (tag, arity) = Cons tag arity
 
-parse :: String -> Program
-parse = syntax . scan 0
-
-showParse :: String -> String
-showParse = showProgram . parse
