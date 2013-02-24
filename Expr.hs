@@ -11,6 +11,7 @@ data Expr = Var Name
           | Let IsRec [(Name, Expr)] Expr
           | Case Expr [Alt]
           | Lambda [Name] Expr
+            deriving (Show)
 
 type Name       = String
 type IsRec      = Bool

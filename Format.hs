@@ -117,6 +117,21 @@ space n
     | n <= 0    = ""
     | otherwise = ' ':space (n - 1)
 
+{- Print things explicitly for now -}
+
+-- Pretty-print expression
+showExpr :: Expr -> String
+showExpr = fromFormat . format 0
+
+-- Pretty-print top-level declaration
+showCombinator :: Combinator -> String
+showCombinator (name, args, expr) = name ++ " " ++ intercalate " " args ++ " = " ++ showExpr expr
+
+-- Pretty-print list of combinators
+showProgram :: Program -> String
+showProgram = intercalate "\n\n" .  map showCombinator
+
+{-
 instance Show Expr where
     show = fromFormat . format 0
 
@@ -125,4 +140,5 @@ instance Show Combinator where
 
 instance Show Program where
     show = intercalate "\n\n" .  map show
+-}
 

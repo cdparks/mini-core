@@ -35,4 +35,4 @@ program = [("main", [], (App (Var "double") (Num 21))),
                  (App (Var "f") (App (App (Var "+") (Var "x")) (Var "x"))))
                  (App (Var "f") (App (App (Var "+") (Var "x")) (Var "x")))))]
 
-main = print program
+main = putStrLn $ showProgram program
