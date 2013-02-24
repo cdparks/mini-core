@@ -15,30 +15,26 @@ keywords = ["let", "letrec", "case", "in", "of", "Pack"]
 
 {- Simple lexical analyis -}
 
--- Scan string with look-ahead 1
+-- Scan string for integers, identifiers, and operators
 scan :: Int -> String -> [Token]
 scan lineno [] = [(lineno, "")]
 scan lineno s@(c:cs)
-    | c == '\n' = scan (lineno + 1) cs
-    | isSpace c = scan lineno cs
-    | isDigit c = let (digits, rest) = span isDigit s
+    | c == '\n' = scan (lineno + 1) cs                              -- Next line
+    | isSpace c = scan lineno cs                                    -- Skip whitespace
+    | isDigit c = let (digits, rest) = span isDigit s               -- Integer
                   in (lineno, digits):scan lineno rest
-    | isAlpha c = let (ending, rest) = span isIdentifierChar cs
+    | isAlpha c = let (ending, rest) = span isIdentifierChar cs     -- Identifier
                       identifier = c:ending
                   in (lineno, identifier):scan lineno rest
-    | otherwise = scan' lineno s
-
--- Scanning with look-ahead 1 didn't find anything so,
--- try with look-ahead 2. Switch back to look-ahead 1 after.
-scan' :: Int -> String -> [Token]
-scan' lineno s@(c:c':cs)
-    | cc' == "--" = let rest = dropWhile (/='\n') cs
-                    in scan lineno rest
-    | cc' `elem` twoCharOps = (lineno, cc'):scan lineno cs
-    | otherwise = (lineno, [c]):scan lineno c'cs where
-      cc' = [c, c']
-      c'cs = c':cs
-scan' lineno s@(c:cs) = (lineno, [c]):scan lineno cs
+    | otherwise = scan' lineno s where                              -- Now look 2 characters ahead
+        scan' lineno s@(c:c':cs)
+            | cc' == "--" = let rest = dropWhile (/='\n') cs        -- Skip comments (-- Like This)
+                            in scan lineno rest
+            | cc' `elem` twoCharOps = (lineno, cc'):scan lineno cs  -- 2-char operators
+            | otherwise = (lineno, [c]):scan lineno c'cs where      -- 1-char operators
+              cc' = [c, c']
+              c'cs = c':cs
+        scan' lineno s@(c:cs) = (lineno, [c]):scan lineno cs        -- Not enough characters for 2-char lookahead
 
 -- The first character of an identifier must be a letter. The
 -- rest can be letters, numbers or _

@@ -29,27 +29,34 @@ interleave sep = foldr join Empty where
         | isEmpty right = left
         | otherwise     = left `Append` sep `Append` right
 
-binaryOps = [("$",  0),
-             ("||", 2),
-             ("&&", 3),
-             ("==", 4),
+-- Map binary ops to precedence
+binaryOps = [("$",  0), -- Infix function application
+             ("||", 2), -- Boolean OR
+             ("&&", 3), -- Boolean AND
+             ("==", 4), -- Comparators
              ("/=", 4),
              ("<",  4),
              (">",  4),
              ("<=", 4),
              (">=", 4),
-             ("+",  6),
+             ("+",  6), -- Arithmetic operators
              ("-",  6),
              ("*",  7),
              ("/",  7),
              ("^",  8),
-             (".",  9)]
+             (".",  9)] -- Function composition
+
+-- Function application has the highest precedence
+applyPrec = 10
+
+-- Reset precedence in unambiguous constructions
+lowestPrec = 0
 
 -- Convert expression into a formatted object
 format :: Int -> Expr -> Format
-format prec (Var v) = String v
-format prec (Num n) = String $ show n
-format prec (Cons tag arity) = concatenate [String "Pack{", String (show tag), String ", ", String (show arity), String "}"]
+format _ (Var v) = String v
+format _ (Num n) = String $ show n
+format _ (Cons tag arity) = concatenate [String "Pack{", String (show tag), String ", ", String (show arity), String "}"]
 format prec (App (App (Var op) e1) e2) =
     case lookup op binaryOps of
         Just prec' -> if prec' > prec then
@@ -57,19 +64,19 @@ format prec (App (App (Var op) e1) e2) =
                       else
                           concatenate [String "(", format prec' e1, String " ", String op, String " ", format prec' e2, String ")"]
         Nothing -> concatenate [String "(", String op, format prec e1, String " ", format prec e2, String ")"]
-format prec (App e1 e2) = concatenate [format 9 e1, String " ", format 9 e2]
-format prec (Let rec bindings body) =
+format prec (App e1 e2) = concatenate [format applyPrec e1, String " ", format applyPrec e2]
+format _ (Let rec bindings body) =
     concatenate [String keyword, Newline,
-                 String " ", Indent (formatBindings prec bindings), Newline,
-                 String "in ", format prec body]
+                 String " ", Indent (formatBindings lowestPrec bindings), Newline,
+                 String "in ", format lowestPrec body]
     where keyword
             | recursive = "letrec"
             | otherwise = "let"
-format prec (Case scrutinee alts) =
-    concatenate [String "case ", format prec scrutinee, String " of", Newline,
-                 formatAlts prec alts]
-format prec (Lambda args body) =
-    concatenate [String "(\\", String (intercalate " " args), String "-> ", format prec body, String ")"]
+format _ (Case scrutinee alts) =
+    concatenate [String "case ", format lowestPrec scrutinee, String " of", Newline,
+                 formatAlts lowestPrec alts]
+format _ (Lambda args body) =
+    concatenate [String "(\\", String (intercalate " " args), String "-> ", format lowestPrec body, String ")"]
 
 -- Format name = expression pairs
 formatBindings :: Int -> [(Name, Expr)] -> Format
