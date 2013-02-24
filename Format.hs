@@ -29,44 +29,67 @@ interleave sep = foldr join Empty where
         | isEmpty right = left
         | otherwise     = left `Append` sep `Append` right
 
+binaryOps = [("$",  0),
+             ("||", 2),
+             ("&&", 3),
+             ("==", 4),
+             ("/=", 4),
+             ("<",  4),
+             (">",  4),
+             ("<=", 4),
+             (">=", 4),
+             ("+",  6),
+             ("-",  6),
+             ("*",  7),
+             ("/",  7),
+             ("^",  8),
+             (".",  9)]
+
 -- Convert expression into a formatted object
-format :: Expr -> Format
-format (Var v) = String v
-format (Num n) = String $ show n
-format (Cons tag arity) = concatenate [String "Pack{", String (show tag), String ", ", String (show arity), String "}"]
-format (App e1 e2) = concatenate [String "(", format e1, String " ", format e2, String ")"]
-format (Let rec bindings body) =
+format :: Int -> Expr -> Format
+format prec (Var v) = String v
+format prec (Num n) = String $ show n
+format prec (Cons tag arity) = concatenate [String "Pack{", String (show tag), String ", ", String (show arity), String "}"]
+format prec (App (App (Var op) e1) e2) =
+    case lookup op binaryOps of
+        Just prec' -> if prec' > prec then
+                          concatenate [format prec' e1, String " ", String op, String " ", format prec' e2]
+                      else
+                          concatenate [String "(", format prec' e1, String " ", String op, String " ", format prec' e2, String ")"]
+        Nothing -> concatenate [String "(", String op, format prec e1, String " ", format prec e2, String ")"]
+format prec (App e1 e2) = concatenate [format 9 e1, String " ", format 9 e2]
+format prec (Let rec bindings body) =
     concatenate [String keyword, Newline,
-                 String " ", Indent (formatBindings bindings), Newline,
-                 String "in ", format body]
+                 String " ", Indent (formatBindings prec bindings), Newline,
+                 String "in ", format prec body]
     where keyword
             | recursive = "letrec"
             | otherwise = "let"
-format (Case scrutinee alts) =
-    concatenate [String "case ", format scrutinee, String " of", Newline,
-                 formatAlts alts]
-format (Lambda args body) =
-    concatenate [String "(\\", String (intercalate " " args), String "-> ", format body, String ")"]
+format prec (Case scrutinee alts) =
+    concatenate [String "case ", format prec scrutinee, String " of", Newline,
+                 formatAlts prec alts]
+format prec (Lambda args body) =
+    concatenate [String "(\\", String (intercalate " " args), String "-> ", format prec body, String ")"]
 
 -- Format name = expression pairs
-formatBindings :: [(Name, Expr)] -> Format
-formatBindings bindings = interleave sep (map formatBinding bindings)
+formatBindings :: Int -> [(Name, Expr)] -> Format
+formatBindings prec bindings = interleave sep (map (formatBinding prec) bindings)
     where sep = concatenate [String ";", Newline]
 
 -- Format a single name = expression pair
-formatBinding :: (Name, Expr) -> Format
-formatBinding (name, expr) = concatenate [String name, String " = ", Indent (format expr)]
+formatBinding :: Int -> (Name, Expr) -> Format
+formatBinding prec (name, expr) = concatenate [String name, String " = ", Indent (format prec expr)]
 
 -- Format alternatives of of the form <tag> [arg ...] -> expr
-formatAlts :: [Alt] -> Format
-formatAlts alts = interleave sep (map formatAlt alts)
+formatAlts :: Int -> [Alt] -> Format
+formatAlts prec alts = interleave sep (map (formatAlt prec) alts)
     where sep = concatenate [String ";", Newline]
 
 -- Format a single alternative
-formatAlt :: (Int, [Name], Expr) -> Format
-formatAlt (tag, args, expr) =
+formatAlt :: Int -> (Int, [Name], Expr) -> Format
+formatAlt prec (tag, args, expr) =
     concatenate [Indent (String " <"), String (show tag), String "> ",
-                 String (intercalate " " args), String "-> ", Indent (format expr)]
+                 String (intercalate " " args), String "-> ", Indent (format prec expr)]
 
 -- Convert a formatted object into a string
 fromFormat :: Format -> String
@@ -88,7 +111,7 @@ space n
     | otherwise = ' ':space (n - 1)
 
 instance Show Expr where
-    show = fromFormat . format
+    show = fromFormat . format 0
 
 instance Show Combinator where
     show (name, args, expr) = name ++ " " ++ intercalate " " args ++ " = " ++ show expr

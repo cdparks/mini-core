@@ -16,7 +16,24 @@ program = [("main", [], (App (Var "double") (Num 21))),
            ("factorial", [], App (Var "fix")
                 (Lambda ["f", "n"]
                     (Case (App (App (Var "<") (Var "n")) (Num 2)) [(0, [], (App (App (Var "*") (Var "n")) (App (Var "f") (App (App (Var "-") (Var "n")) (Num 1))))),
-                                                                   (1, [], (Num 1))])))]
+                                                                   (1, [], (Num 1))]))),
+           ("muladd", ["x"],
+            (App (App (Var "+")
+                 (App (App (Var "*") (Var "x")) (Var "x")))
+                 (App (App (Var "*") (Var "x")) (Var "x")))),
+           ("appmulad", ["f", "x"],
+            (App (App (Var "+")
+                 (App (Var "f") (App (App (Var "*") (Var "x")) (Var "x"))))
+                 (App (Var "f") (App (App (Var "*") (Var "x")) (Var "x"))))),
+           ("addmul", ["x"],
+            (App (App (Var "*")
+                 (App (App (Var "+") (Var "x")) (Var "x")))
+                 (App (App (Var "+") (Var "x")) (Var "x")))),
+           ("appaddmul", ["f", "x"],
+            (App (App (Var "*")
+                 (App (Var "f") (App (App (Var "+") (Var "x")) (Var "x"))))
+                 (App (Var "f") (App (App (Var "+") (Var "x")) (Var "x")))))]
+
 -- Core Expression type
 data Expr = Var Name
           | Num Int
