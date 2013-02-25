@@ -63,8 +63,10 @@ format prec (App (App (Var op) e1) e2) =
                           concatenate [format prec' e1, String " ", String op, String " ", format prec' e2]
                       else
                           concatenate [String "(", format prec' e1, String " ", String op, String " ", format prec' e2, String ")"]
-        Nothing -> concatenate [String "(", String op, format prec e1, String " ", format prec e2, String ")"]
-format prec (App e1 e2) = concatenate [format applyPrec e1, String " ", format applyPrec e2]
+        Nothing -> concatenate [String op, String " ", format applyPrec e1, String " ", format applyPrec e2]
+format prec (App e1 e2)
+    | prec == applyPrec = concatenate [String "(", format applyPrec e1, String " ", format applyPrec e2, String ")"]
+    | otherwise         = concatenate [format applyPrec e1, String " ", format applyPrec e2]
 format _ (Let rec bindings body) =
     concatenate [String keyword, Newline,
                  String " ", Indent (formatBindings lowestPrec bindings), Newline,
