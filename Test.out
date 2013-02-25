@@ -1,0 +1,43 @@
+main = double 21;
+
+double x = letrec
+  y = x + x
+  in y;
+
+False = Pack{0, 0};
+
+True = Pack{1, 0};
+
+Nil = Pack{2, 0};
+
+Cons = Pack{3, 2};
+
+range start stop = case start < stop of
+  <0> -> Nil;
+  <1> -> Cons start range (start + 1) stop;
+
+length ls = case ls of
+  <2> -> 0;
+  <3> x xs -> 1 + length xs;
+
+length2 ls = case ls of
+  <2> -> 0;
+  <3> x xs -> case xs of
+      <2> -> 1;
+      <3> y ys -> case ys of
+          <2> -> 2;
+          <3> z zs -> 3 + length2 zs;
+
+fix f = f (fix f);
+
+factorial = fix (\f n -> case n < 2 of
+  <1> -> 1;
+  <0> -> n * f (n - 1));
+
+mulAdd x = x * x + x * x;
+
+mulAppAdd x = f (x * x) + f (x * x);
+
+addMul x = (x + x) * (x + x);
+
+addAppMul x = f (x + x) * f (x + x);

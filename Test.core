@@ -4,31 +4,44 @@ double x = let
     y = x + x
     in y;
 
+-- Booleans
+False = Pack{0, 0};
+True = Pack{1, 0};
+
+-- Lists
+Nil = Pack{2, 0};
+Cons = Pack{3, 2};
+
+-- range 1 5 -> [1, 2, 3, 4]
+range start stop = case start < stop of
+    <0> -> Nil;
+    <1> -> Cons start (range (start + 1) stop);
+
+-- Calculate length by analysis on list 
 length ls = case ls of
-    <0> -> 0;
-    <1> x xs -> 1 + length xs;
+    <2> -> 0;
+    <3> x xs -> 1 + length xs;
 
+-- Sillier way to do the same thing
 length2 ls = case ls of
-    <0> -> 0;
-    <1> x xs -> case xs of
-        <0> -> 1;
-        <1> y ys -> case ys of
-            <0> -> 2;
-            <1> z zs -> 3 + length2 zs;
+    <2> -> 0;
+    <3> x xs -> case xs of
+        <2> -> 1;
+        <3> y ys -> case ys of
+            <2> -> 2;
+            <3> z zs -> 3 + length2 zs;
 
-fix f = let
-    x = fix f
-    in f x;
+-- Fixed point combinator
+fix f = f (fix f);
 
+-- Define factorial using an anonymous function
 factorial = fix(\f n -> case n < 2 of
     <1> -> 1;
     <0> -> n * f (n - 1));
 
+-- Precedence testing
 mulAdd x = x * x + x * x;
-
 mulAppAdd x = f (x * x) + f (x * x);
-
 addMul x = (x + x) * (x + x);
-
 addAppMul x = f (x + x) * f (x + x)
 
