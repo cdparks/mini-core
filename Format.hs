@@ -78,7 +78,7 @@ format _ (Case scrutinee alts) =
     concatenate [String "case ", format lowestPrec scrutinee, String " of", Newline,
                  formatAlts lowestPrec alts]
 format _ (Lambda args body) =
-    concatenate [String "(\\", String (intercalate " " args), String "-> ", format lowestPrec body, String ")"]
+    concatenate [String "(\\", String (intercalate " " args), String " -> ", format lowestPrec body, String ")"]
 
 -- Format name = expression pairs
 formatBindings :: Int -> [(Name, Expr)] -> Format
@@ -97,8 +97,12 @@ formatAlts prec alts = interleave sep (map (formatAlt prec) alts)
 -- Format a single alternative
 formatAlt :: Int -> (Int, [Name], Expr) -> Format
 formatAlt prec (tag, args, expr) =
-    concatenate [Indent (String " <"), String (show tag), String "> ",
-                 String (intercalate " " args), String "-> ", Indent (format prec expr)]
+    concatenate [Indent (String " <"), String (show tag), String ">",
+                 String (showArgs args), String " -> ", Indent (format prec expr)]
+
+-- Convenience function to print space-separated strings
+showArgs [] = ""
+showArgs args@(_:_) = " " ++ intercalate " " args
 
 -- Convert a formatted object into a string
 fromFormat :: Format -> String
@@ -127,7 +131,7 @@ showExpr = fromFormat . format 0
 
 -- Pretty-print top-level declaration
 showCombinator :: Combinator -> String
-showCombinator (name, args, expr) = name ++ " " ++ intercalate " " args ++ " = " ++ showExpr expr
+showCombinator (name, args, expr) = name ++ showArgs args ++ " = " ++ showExpr expr
 
 -- Pretty-print list of combinators
 showProgram :: Program -> String
