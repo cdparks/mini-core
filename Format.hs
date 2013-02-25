@@ -31,8 +31,7 @@ interleave sep = foldr join Empty where
         | otherwise     = left `Append` sep `Append` right
 
 -- Map binary ops to precedence
-binaryOps = [("$",  0), -- Infix function application
-             ("||", 2), -- Boolean OR
+binaryOps = [("||", 2), -- Boolean OR
              ("&&", 3), -- Boolean AND
              ("==", 4), -- Comparators
              ("/=", 4),
@@ -43,9 +42,7 @@ binaryOps = [("$",  0), -- Infix function application
              ("+",  6), -- Arithmetic operators
              ("-",  6),
              ("*",  7),
-             ("/",  7),
-             ("^",  8),
-             (".",  9)] -- Function composition
+             ("/",  7)]
 
 -- Function application has the highest precedence
 applyPrec = 10
