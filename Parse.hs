@@ -46,6 +46,9 @@ isIdentifierChar c = isAlphaNum c || c == '_'
 -- Operators consisting of 2 characters
 twoCharOps = "->":filter ((==2) . length) (map fst binaryOps)
 
+-- This comes in handy a number of times
+second = flip const
+
 {- Parser combinators -}
 
 -- Parse succeeds if predicate is satisfied
@@ -102,11 +105,11 @@ pApply p f tokens = do
 
 -- Parse input between delimiters (discarding delimiters)
 pBetween :: Parser a -> Parser b -> Parser c -> Parser b
-pBetween lhs p rhs = pThen (flip const) lhs (pThen const p rhs)
+pBetween lhs p rhs = pThen second lhs (pThen const p rhs)
 
 -- Parse repeated input separated by delimiters (discarding delimiters)
 pOneOrMoreWithSep :: Parser a -> Parser b -> Parser [a]
-pOneOrMoreWithSep p1 p2 = pThen (:) p1 (pZeroOrMore (pThen (flip const) p2 p1))
+pOneOrMoreWithSep p1 p2 = pThen (:) p1 (pZeroOrMore (pThen second p2 p1))
 
 {- Interface to parser -}
 
@@ -135,7 +138,7 @@ pProgram = pOneOrMoreWithSep pCombinator (pLit ";")
 pCombinator :: Parser Combinator
 pCombinator = pThen build pVar pArgs where
     pArgs = pThen (,) (pZeroOrMore pVar) pBody
-    pBody = pThen (flip const) (pLit "=") pExpr
+    pBody = pThen second (pLit "=") pExpr
     build var (names, expr) = (var, names, expr)
 
 -- Atom -> Let | LetRec | Case | Lambda | OrExpr
@@ -153,17 +156,17 @@ pLet = pThen build keyword rest where
 
 -- Bindings -> var = Expr [; var = Expr]*
 pBindings = pOneOrMoreWithSep pBinding $ pLit ";" where
-    pBinding = pThen (,) pVar $ pThen (flip const) (pLit "=") pExpr
+    pBinding = pThen (,) pVar $ pThen second (pLit "=") pExpr
 
 -- LetBody -> in Expr
 pLetBody :: Parser Expr
-pLetBody = pThen (flip const) (pLit "in") pExpr
+pLetBody = pThen second (pLit "in") pExpr
 
 -- Case -> case Expr of Alts
 pCase :: Parser Expr
 pCase = pThen build keyword rest where
     keyword = pLit "case"
-    rest    = pThen (,) pExpr $ pThen (flip const) (pLit "of") pAlts
+    rest    = pThen (,) pExpr $ pThen second (pLit "of") pAlts
     build _ (expr, alts) = Case expr alts
 
 -- Alts -> <tag> arg* -> Expr [; <tag> arg* -> Expr]*
@@ -172,7 +175,7 @@ pAlts = pOneOrMoreWithSep pAlt $ pLit ";" where
     pAlt  = pThen build pTag pArgs
     pTag  = pBetween (pLit "<") pNum (pLit ">")
     pArgs = pThen (,) (pZeroOrMore pVar) pBody
-    pBody = pThen (flip const) (pLit "->") pExpr
+    pBody = pThen second (pLit "->") pExpr
     build tag (args, body) = (tag, args, body)
 
 -- Lambda -> \var+ -> Expr
@@ -181,7 +184,7 @@ pLambda = pThen build keyword rest where
     keyword = pLit "\\"
     rest  = pThen (,) pArgs pBody
     pArgs = pOneOrMore pVar
-    pBody = pThen (flip const) (pLit "->") pExpr
+    pBody = pThen second (pLit "->") pExpr
     build _ (args, body) = Lambda args body
 
 -- Represent the right-hand-side of an expression 
@@ -259,6 +262,6 @@ pConstructor = pThen build pPack pBracketed where
     pBracketed = pBetween (pLit "{") pBody (pLit "}")
     pBody = pThen (,) pTag pArity
     pTag = pNum
-    pArity = pThen (flip const) (pLit ",") pNum
+    pArity = pThen second (pLit ",") pNum
     build _ (tag, arity) = Cons tag arity
 
