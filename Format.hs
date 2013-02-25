@@ -10,7 +10,8 @@ data Format = Empty
             | String String
             | Append Format Format
             | Newline
-            | Indent Format
+            | Indent
+            | Dedent
               deriving Show
 
 isEmpty :: Format -> Bool
@@ -68,14 +69,14 @@ format prec (App e1 e2)
     | prec == applyPrec = concatenate [String "(", format applyPrec e1, String " ", format applyPrec e2, String ")"]
     | otherwise         = concatenate [format applyPrec e1, String " ", format applyPrec e2]
 format _ (Let rec bindings body) =
-    concatenate [String keyword, Newline,
-                 String " ", Indent (formatBindings lowestPrec bindings), Newline,
+    concatenate [String keyword, Indent, Newline,
+                 formatBindings lowestPrec bindings, Newline,
                  String "in ", format lowestPrec body]
     where keyword
             | recursive = "letrec"
             | otherwise = "let"
 format _ (Case scrutinee alts) =
-    concatenate [String "case ", format lowestPrec scrutinee, String " of", Newline,
+    concatenate [String "case ", format lowestPrec scrutinee, String " of", Indent, Newline,
                  formatAlts lowestPrec alts]
 format _ (Lambda args body) =
     concatenate [String "(\\", String (intercalate " " args), String " -> ", format lowestPrec body, String ")"]
@@ -87,7 +88,7 @@ formatBindings prec bindings = interleave sep (map (formatBinding prec) bindings
 
 -- Format a single name = expression pair
 formatBinding :: Int -> (Name, Expr) -> Format
-formatBinding prec (name, expr) = concatenate [String name, String " = ", Indent (format prec expr)]
+formatBinding prec (name, expr) = concatenate [String name, String " = ", format prec expr]
 
 -- Format alternatives of of the form <tag> [arg ...] -> expr
 formatAlts :: Int -> [Alt] -> Format
@@ -97,8 +98,8 @@ formatAlts prec alts = interleave sep (map (formatAlt prec) alts)
 -- Format a single alternative
 formatAlt :: Int -> (Int, [Name], Expr) -> Format
 formatAlt prec (tag, args, expr) =
-    concatenate [Indent (String " <"), String (show tag), String ">",
-                 String (showArgs args), String " -> ", Indent (format prec expr)]
+    concatenate [String "<", String (show tag), String ">",
+                 String (showArgs args), String " -> ", Indent, format prec expr, Dedent]
 
 -- Convenience function to print space-separated strings
 showArgs [] = ""
@@ -106,16 +107,17 @@ showArgs args@(_:_) = " " ++ intercalate " " args
 
 -- Convert a formatted object into a string
 fromFormat :: Format -> String
-fromFormat fmt = flatten 0 [(fmt, 0)]
+fromFormat fmt = flatten 0 [fmt]
 
 -- Convert formatted object into a string keeping track of layout
-flatten :: Int -> [(Format, Int)] -> String
-flatten col [] = ""
-flatten col ((Empty, indent):rest) = flatten col rest
-flatten col ((String s, indent):rest) = s ++ flatten (col + length s) rest
-flatten col ((Append s1 s2, indent):rest) = flatten col ((s1, indent):(s2, indent):rest)
-flatten col ((Indent s, indent):rest) = flatten col ((s, col):rest)
-flatten col ((Newline, indent):rest) = '\n':(space indent) ++ flatten indent rest
+flatten :: Int -> [Format] -> String
+flatten depth [] = ""
+flatten depth (Empty:rest) = flatten depth rest
+flatten depth (String s:rest) = s ++ flatten depth rest
+flatten depth (Append s1 s2:rest) = flatten depth (s1:s2:rest)
+flatten depth (Indent:rest) = flatten (depth + 2) rest
+flatten depth (Dedent:rest) = flatten (depth - 2) rest
+flatten depth (Newline:rest) = ('\n':space depth) ++ flatten depth rest
 
 -- Generate a string of n spaces
 space :: Int -> String
