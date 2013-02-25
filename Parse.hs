@@ -115,7 +115,7 @@ pOneOrMoreWithSep p1 p2 = pThen (:) p1 (pZeroOrMore (pThen second p2 p1))
 
 -- Parse String into abstract syntax tree
 parse :: String -> Program
-parse = syntax . scan 0
+parse = syntax . scan 1
 
 -- Parse program and then print it back out
 showParse :: String -> String
@@ -123,10 +123,16 @@ showParse = showProgram . parse
 
 -- Parse list of tokens into abstract syntax tree
 syntax :: [Token] -> Program
-syntax = firstParse . pProgram where
-    firstParse ((program, []):_) = program
-    firstParse (parse:rest)      = firstParse rest
-    firstParse _                 = error "Syntax error"
+syntax = firstParse [] . pProgram where
+    firstParse _ ((program, []):_)       = program
+    firstParse _ ((_, remainder):tokens) = firstParse remainder tokens
+    firstParse lastFailure _             = syntaxError lastFailure
+
+-- Try to print line number and token where last failed parse occurred
+-- Fallback to ("horribly uninformative") error message =D
+syntaxError remainder@(_:_) = error $ "Syntax error at line " ++ show lineno ++ ": Unexpected '" ++ token ++ "'" where
+    (lineno, token)         = last remainder
+syntaxError _               = error "Syntax error"
 
 {- Productions start below -}
 
