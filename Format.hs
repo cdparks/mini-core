@@ -133,7 +133,7 @@ showExpr = fromFormat . format 0
 
 -- Pretty-print top-level declaration
 showCombinator :: Combinator -> String
-showCombinator (name, args, expr) = name ++ showArgs args ++ " = " ++ showExpr expr
+showCombinator (name, args, expr) = name ++ showArgs args ++ " = " ++ showExpr expr ++ ";"
 
 -- Pretty-print list of combinators
 showProgram :: Program -> String

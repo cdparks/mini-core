@@ -1,0 +1,34 @@
+main = double 21;
+
+double x = let
+    y = x + x
+    in y;
+
+length ls = case ls of
+    <0> -> 0;
+    <1> x xs -> 1 + length xs;
+
+length2 ls = case ls of
+    <0> -> 0;
+    <1> x xs -> case xs of
+        <0> -> 1;
+        <1> y ys -> case ys of
+            <0> -> 2;
+            <1> z zs -> 3 + length2 zs;
+
+fix f = let
+    x = fix f
+    in f x;
+
+factorial = fix(\f n -> case n < 2 of
+    <1> -> 1;
+    <0> -> n * f (n - 1));
+
+mulAdd x = x * x + x * x;
+
+mulAppAdd x = f (x * x) + f (x * x);
+
+addMul x = (x + x) * (x + x);
+
+addAppMul x = f (x + x) * f (x + x)
+
