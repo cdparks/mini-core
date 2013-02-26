@@ -40,4 +40,4 @@ mulAppAdd x = f (x * x) + f (x * x);
 
 addMul x = (x + x) * (x + x);
 
-addAppMul x = f (x + x) * f (x + x);
+addAppMul x = f (x + x) * f (x + x)

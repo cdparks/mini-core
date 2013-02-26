@@ -130,11 +130,11 @@ showExpr = fromFormat . format 0
 
 -- Pretty-print top-level declaration
 showCombinator :: Combinator -> String
-showCombinator (name, args, expr) = name ++ showArgs args ++ " = " ++ showExpr expr ++ ";"
+showCombinator (name, args, expr) = name ++ showArgs args ++ " = " ++ showExpr expr
 
 -- Pretty-print list of combinators
 showProgram :: Program -> String
-showProgram = intercalate "\n\n" .  map showCombinator
+showProgram = intercalate ";\n\n" .  map showCombinator
 
 {-
 instance Show Expr where
@@ -144,6 +144,6 @@ instance Show Combinator where
     show (name, args, expr) = name ++ " " ++ intercalate " " args ++ " = " ++ show expr
 
 instance Show Program where
-    show = intercalate "\n\n" .  map show
+    show = intercalate ";\n\n" .  map show
 -}
 
