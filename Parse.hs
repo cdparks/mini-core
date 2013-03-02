@@ -75,7 +75,7 @@ pNum = pApply (pSat numeric) toInt where
 
 -- Minor syntactic sugar for parser alternation
 (+) :: Parser a -> Parser a -> Parser a
-(+) p1 p2 tokens = (p1 tokens) ++ (p2 tokens)
+(+) p1 p2 tokens = p1 tokens ++ p2 tokens
 
 -- Parse input with first parser, parse remaining input with second
 -- parser, and combine matches
@@ -87,7 +87,8 @@ pThen combine p1 p2 tokens = do
 
 -- Repeat parse zero or more times
 pZeroOrMore :: Parser a -> Parser [a]
-pZeroOrMore p = pOneOrMore p + pEmpty []
+pZeroOrMore p = pOneOrMore p
+              + pEmpty []
 
 -- Parse succeeds without consuming input
 pEmpty :: a -> Parser a
