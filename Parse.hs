@@ -60,7 +60,7 @@ pCombinator = do name <- identifier
                  expr <- pExpr
                  return (name, args, expr)
 
--- Atom -> Let | LetRec | Case | Lambda | OrExpr
+-- Atom -> Let | BinOp | Case | Lambda 
 pExpr :: Parser Expr
 pExpr =   pLet
       <|> pBinOp
@@ -68,7 +68,7 @@ pExpr =   pLet
       <|> pLambda
       <?> "expression"
 
--- Let -> (let | letrec) Bindings LetBody
+-- Let -> (let | letrec) Bindings in Expr
 pLet :: Parser Expr
 pLet = do isRec <-  (reserved "let"    >> return False)
                 <|> (reserved "letrec" >> return True)
@@ -85,12 +85,11 @@ pBindings = semiSep1 $
        expr <- pExpr
        return (name, expr)
 
--- Case -> case Expr of { Alts }
+-- Case -> case Expr of Alts
 pCase :: Parser Expr
 pCase = do reserved "case"
            expr <- pExpr
            reserved "of"
-           --alts <- braces pAlts
            alts <- pAlts
            return $ Case expr alts
 
@@ -123,15 +122,15 @@ pBinOp = buildExpressionParser binOpTable pApp where
                    , Infix (parseOp "-")  AssocLeft
                    ]
                  , [ Infix (parseOp "<")  AssocNone
-                   , Infix (parseOp ">")  AssocLeft
-                   , Infix (parseOp "<=") AssocLeft
-                   , Infix (parseOp ">=") AssocLeft
-                   , Infix (parseOp "==") AssocLeft
-                   , Infix (parseOp "/=") AssocLeft
+                   , Infix (parseOp ">")  AssocNone
+                   , Infix (parseOp "<=") AssocNone
+                   , Infix (parseOp ">=") AssocNone
+                   , Infix (parseOp "==") AssocNone
+                   , Infix (parseOp "/=") AssocNone
                    ]
-                 , [ Infix (parseOp "&&") AssocNone
+                 , [ Infix (parseOp "&&") AssocLeft
                    ]
-                 , [ Infix (parseOp "||") AssocNone
+                 , [ Infix (parseOp "||") AssocLeft
                    ]
                  ]
 
@@ -140,13 +139,13 @@ pApp :: Parser Expr
 pApp = many1 pAtom >>= return . makeSpine where
     makeSpine (x:xs) = foldl App x xs
 
--- Atom -> num | var | Constructor | ( Expr )
+-- Atom -> var | num | Constructor | ( Expr )
 pAtom :: Parser Expr
 pAtom =   (identifier >>= return . Var)
+      <|> (natural >>= return . Num . fromInteger)
       <|> pConstructor
       <|> parens pExpr
-      <|> (natural >>= return . Num . fromInteger)
-      <?> "identifier, constructor, parenthesized expression, or number"
+      <?> "identifier, number, constructor, or parenthesized expression"
 
 -- Constructor -> Pack { tag , arity }
 pConstructor :: Parser Expr
