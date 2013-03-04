@@ -4,6 +4,10 @@ double x = let
     y = x + x
     in y;
 
+double2 x = letrec
+    y = x + x
+    in y;
+
 -- Booleans
 False = Pack{0, 0};
 True = Pack{1, 0};

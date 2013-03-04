@@ -1,6 +1,10 @@
 main = double 21;
 
-double x = letrec
+double x = let
+  y = x + x
+  in y;
+
+double2 x = letrec
   y = x + x
   in y;
 

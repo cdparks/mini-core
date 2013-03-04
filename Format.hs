@@ -70,7 +70,7 @@ format _ (Let rec bindings body) =
                  formatBindings lowestPrec bindings, Newline,
                  String "in ", format lowestPrec body]
     where keyword
-            | recursive = "letrec"
+            | rec       = "letrec"
             | otherwise = "let"
 format _ (Case scrutinee alts) =
     concatenate [String "case ", format lowestPrec scrutinee, String " of", Indent, Newline,
