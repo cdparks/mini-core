@@ -3,6 +3,6 @@ import Parse
 
 -- Test formatting with a few different constructions
 main = do
-    source <-  readFile "./Test.core"
+    source <- readFile "./Test.core"
     putStrLn $ showParse source
 
