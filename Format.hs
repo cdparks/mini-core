@@ -1,34 +1,9 @@
 {-# LANGUAGE OverlappingInstances, TypeSynonymInstances, FlexibleInstances #-}
 
 module Format where
-import Data.List
+
+import Text.PrettyPrint
 import Expr
-
--- Represent a formatted expression as a tree of 
--- Appends and layout directives
-data Format = Empty
-            | String String
-            | Append Format Format
-            | Newline
-            | Indent
-            | Dedent
-              deriving Show
-
-isEmpty :: Format -> Bool
-isEmpty Empty = True
-isEmpty _     = False
-
--- Concatenate multiple formatted values using Append
-concatenate :: [Format] -> Format
-concatenate = foldr Append Empty
-
--- Concatenate multiple formatted values with a separator
--- in between each pair
-interleave :: Format -> [Format] -> Format
-interleave sep = foldr join Empty where
-    join left right
-        | isEmpty right = left
-        | otherwise     = left `Append` sep `Append` right
 
 -- Map binary ops to precedence
 binaryOps = [("||", 2), -- Boolean OR
@@ -51,99 +26,66 @@ applyPrec = 10
 lowestPrec = 0
 
 -- Convert expression into a formatted object
-format :: Int -> Expr -> Format
-format _ (Var v) = String v
-format _ (Num n) = String $ show n
-format _ (Cons tag arity) = concatenate [String "Pack{", String (show tag), String ", ", String (show arity), String "}"]
+format :: Int -> Expr -> Doc
+format _ (Var v) = text v
+format _ (Num n) = int n
+format _ (Cons tag arity) = text "Pack" <> braces (int tag <> comma <> int arity)
 format prec (App (App (Var op) e1) e2) =
     case lookup op binaryOps of
-        Just prec' -> if prec' > prec then
-                          concatenate [format prec' e1, String " ", String op, String " ", format prec' e2]
-                      else
-                          concatenate [String "(", format prec' e1, String " ", String op, String " ", format prec' e2, String ")"]
-        Nothing -> concatenate [String op, String " ", format applyPrec e1, String " ", format applyPrec e2]
-format prec (App e1 e2)
-    | prec == applyPrec = concatenate [String "(", format applyPrec e1, String " ", format applyPrec e2, String ")"]
-    | otherwise         = concatenate [format applyPrec e1, String " ", format applyPrec e2]
+        Just prec' -> wrap expr where
+            expr = format prec' e1 <+> text op <+> format prec' e2
+            wrap | prec' > prec = id
+                 | otherwise    = parens
+        Nothing -> wrap expr where
+            expr = text op <+> format applyPrec e1 <+> format applyPrec e2
+            wrap | prec == applyPrec = parens
+                 | otherwise         = id
+format prec (App e1 e2) = wrap expr where
+    expr = format applyPrec e1 <+> format applyPrec e2
+    wrap | prec == applyPrec = parens
+         | otherwise         = id
 format _ (Let rec bindings body) =
-    concatenate [String keyword, Indent, Newline,
-                 formatBindings lowestPrec bindings, Newline,
-                 String "in ", format lowestPrec body]
-    where keyword
-            | rec       = "letrec"
-            | otherwise = "let"
+    text keyword <+> nest indent (formatBindings lowestPrec bindings) $$ text "in" <+> format lowestPrec body
+        where indent  = length keyword + 1
+              keyword | rec       = "letrec"
+                      | otherwise = "let"
 format _ (Case scrutinee alts) =
-    concatenate [String "case ", format lowestPrec scrutinee, String " of", Indent, Newline,
-                 formatAlts lowestPrec alts]
+    text "case" <+> format lowestPrec scrutinee <+> text "of" $$ nest 5 (formatAlts lowestPrec alts)
 format _ (Lambda args body) =
-    concatenate [String "(\\", String (intercalate " " args), String " -> ", format lowestPrec body, String ")"]
+    parens $ text "\\" <> sep (map text args) <+> text "->" <+> format lowestPrec body
 
 -- Format name = expression pairs
-formatBindings :: Int -> [(Name, Expr)] -> Format
-formatBindings prec bindings = interleave sep (map (formatBinding prec) bindings)
-    where sep = concatenate [String ";", Newline]
-
--- Format a single name = expression pair
-formatBinding :: Int -> (Name, Expr) -> Format
-formatBinding prec (name, expr) = concatenate [String name, String " = ", format prec expr]
+formatBindings :: Int -> [(Name, Expr)] -> Doc
+formatBindings prec bindings = vcat (punctuate semi (map formatBinding bindings)) where
+    formatBinding (name, expr) = text name <+> text "=" <+> format prec expr
 
 -- Format alternatives of of the form <tag> [arg ...] -> expr
-formatAlts :: Int -> [Alt] -> Format
-formatAlts prec alts = interleave sep (map (formatAlt prec) alts)
-    where sep = concatenate [String ";", Newline]
-
--- Format a single alternative
-formatAlt :: Int -> (Int, [Name], Expr) -> Format
-formatAlt prec (tag, args, expr) =
-    concatenate [String "<", String (show tag), String ">",
-                 String (showArgs args), String " -> ", Indent, format prec expr, Dedent]
-
--- Convenience function to print space-separated strings
-showArgs [] = ""
-showArgs args@(_:_) = " " ++ intercalate " " args
-
--- Convert a formatted object into a string
-fromFormat :: Format -> String
-fromFormat fmt = flatten 0 [fmt]
-
--- Convert formatted object into a string keeping track of layout
-flatten :: Int -> [Format] -> String
-flatten depth [] = ""
-flatten depth (Empty:rest) = flatten depth rest
-flatten depth (String s:rest) = s ++ flatten depth rest
-flatten depth (Append s1 s2:rest) = flatten depth (s1:s2:rest)
-flatten depth (Indent:rest) = flatten (depth + 2) rest
-flatten depth (Dedent:rest) = flatten (depth - 2) rest
-flatten depth (Newline:rest) = ('\n':space depth) ++ flatten depth rest
-
--- Generate a string of n spaces
-space :: Int -> String
-space n
-    | n <= 0    = ""
-    | otherwise = ' ':space (n - 1)
+formatAlts :: Int -> [Alt] -> Doc
+formatAlts prec alts = vcat (punctuate semi (map formatAlt alts)) where
+    formatAlt (tag, args, expr) = text "<" <> int tag <> text ">" <+> sep (map text args) <+> text "->" <+> format prec expr
 
 {- Print things explicitly for now -}
 
 -- Pretty-print expression
-showExpr :: Expr -> String
-showExpr = fromFormat . format 0
+formatExpr :: Expr -> Doc
+formatExpr = format lowestPrec
 
 -- Pretty-print top-level declaration
-showCombinator :: Combinator -> String
-showCombinator (name, args, expr) = name ++ showArgs args ++ " = " ++ showExpr expr
+formatCombinator :: Combinator -> Doc
+formatCombinator (name, args, expr) = text name <+> sep (map text args) <+> text "=" <+> formatExpr expr
 
 -- Pretty-print list of combinators
-showProgram :: Program -> String
-showProgram = intercalate ";\n\n" .  map showCombinator
+formatProgram :: Program -> Doc
+formatProgram = sep . punctuate semi . map formatCombinator
 
 {-
 instance Show Expr where
-    show = fromFormat . format 0
+    show = show . formatExpr
 
 instance Show Combinator where
-    show (name, args, expr) = name ++ " " ++ intercalate " " args ++ " = " ++ show expr
+    show = show . formatCombinator
 
 instance Show Program where
-    show = intercalate ";\n\n" .  map show
+    show = show . formatProgram
 -}
 

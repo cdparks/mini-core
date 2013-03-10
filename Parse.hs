@@ -46,7 +46,7 @@ parseCore s =
         Right r -> r
 
 showParse :: String -> String
-showParse = showProgram . parseCore
+showParse = show . formatProgram . parseCore
 
 -- Program -> Combinator [; Combinator]*
 pCore :: Parser Program
