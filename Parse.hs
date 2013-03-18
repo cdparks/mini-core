@@ -1,4 +1,7 @@
-module Parse where
+module Parse (
+    parseCore,
+    showParse
+) where
 
 import Text.ParserCombinators.Parsec
 import Text.ParserCombinators.Parsec.Expr

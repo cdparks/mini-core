@@ -1,6 +1,11 @@
 {-# LANGUAGE OverlappingInstances, TypeSynonymInstances, FlexibleInstances #-}
 
-module Format where
+module Format (
+    formatExpr,
+    formatCombinator,
+    formatProgram,
+    binaryOps
+) where
 
 import Text.PrettyPrint
 import Expr
