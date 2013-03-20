@@ -96,7 +96,9 @@ step state = dispatch (load heap (head stack)) where
     dispatch (NNum n) = error "Number applied as a function"
     dispatch (NApp a1 a2) = (a1:stack, dump, heap, globals, steps)
     dispatch (NCombinator name args body) = (stack', dump, heap', globals, steps) where
-        stack' = result:(drop (length args + 1) stack)
+        expect = length args + 1
+        stack' | expect > length stack = error ("Not enough arguments for supercombinator " ++ name)
+               | otherwise             = result:drop expect stack
         (heap', result) = instantiate heap env body
         env = bindings ++ globals
         bindings = zip args (getArgs heap stack)
@@ -121,6 +123,7 @@ instantiate heap env expr = build expr where
         Nothing    -> error ("Undefined name " ++ v)
     build (Cons _ _) = error "Can't instantiate constructors yet"
     build (Let _ _ _) = error "Can't instantiate let(rec)s yet"
+    build (Case _ _) = error "Can't instantiate case expressions yet"
 
 -- Parse, compile, and reduce program.
 run :: Bool -> String -> String
