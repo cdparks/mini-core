@@ -49,10 +49,10 @@ format prec (App e1 e2) = wrap expr where
     expr = format applyPrec e1 <+> format applyPrec e2
     wrap | prec == applyPrec = parens
          | otherwise         = id
-format _ (Let rec bindings body) =
+format _ (Let recursive bindings body) =
     text keyword <+> nest indent (formatBindings lowestPrec bindings) $$ text "in" <+> format lowestPrec body
         where indent  = length keyword + 1
-              keyword | rec       = "letrec"
+              keyword | recursive = "letrec"
                       | otherwise = "let"
 format _ (Case scrutinee alts) =
     text "case" <+> format lowestPrec scrutinee <+> text "of" $$ nest 5 (formatAlts lowestPrec alts)

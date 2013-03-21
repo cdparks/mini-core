@@ -113,17 +113,39 @@ getArgs heap (combinator:stack) = map getArg stack where
 -- Create heap node from expression
 instantiate :: Heap Node -> [(Name, Addr)] -> Expr -> (Heap Node, Addr)
 instantiate heap env expr = build expr where
+    -- Build number on heap
     build (Num n) = alloc heap (NNum n)
+
+    -- Look up variable in environment
+    build (Var v) = case lookup v env of
+        Just value -> (heap, value)
+        Nothing    -> error ("Undefined name " ++ v)
+
+    -- Instantiate function and argument and build application
     build (App e1 e2) =
         let (heap',  a1) = instantiate heap  env e1
             (heap'', a2) = instantiate heap' env e2
         in alloc heap'' (NApp a1 a2)
-    build (Var v) = case lookup v env of
-        Just value -> (heap, value)
-        Nothing    -> error ("Undefined name " ++ v)
+
+    -- Instantiate each expression, add each binding to environment, and then
+    -- instantiate body
+    build (Let recursive bindings body) =
+        let (heap', letEnv') = addBindings bindings heap letEnv
+            letEnv | recursive = env' -- letrec, bindings can refer to each other
+                   | otherwise = env  -- let, bindings can refer to current environment
+            env' = letEnv' ++ env
+        in instantiate heap' env' body
+
+    -- Not supported yet
     build (Cons _ _) = error "Can't instantiate constructors yet"
-    build (Let _ _ _) = error "Can't instantiate let(rec)s yet"
     build (Case _ _) = error "Can't instantiate case expressions yet"
+
+-- Add let bindings to new heap and environment
+addBindings :: [(Name, Expr)] -> Heap Node -> [(Name, Addr)] -> (Heap Node, [(Name, Addr)])
+addBindings bindings heap env = foldr addBinding (heap, []) bindings where
+    addBinding (name, expr) (heap', env') =
+        let (heap'', addr) = instantiate heap' env expr
+        in (heap'', (name, addr):env')
 
 -- Parse, compile, and reduce program.
 run :: Bool -> String -> String
