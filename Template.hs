@@ -26,6 +26,7 @@ type Steps = Int
 data Node = NApp Addr Addr
           | NCombinator Name [Name] Expr
           | NNum Int
+          | NPointer Addr
             deriving Show
 
 -- state = (s, d, h, f)
@@ -38,10 +39,14 @@ type TIState = (Stack, Dump, Heap Node, Globals, Steps)
           (a : s,     d, h[a : NApp a1 a2], f)
        -> (a1 : a: s, d, h[a : NApp a1 a2], f)
 
-    2. Perform supercombinator reduction:
+    2. Perform supercombinator reduction updating the root of the redex:
           (a0: a1 : ... : an : s, d, h[a0 : NCombinator [x1, ..., xn] body], f)
-       -> (ar : s,                d, h',                                     f)
+       -> (ar : s,                d, h'[an : NPointer ar],                   f)
        where (h', ar) = instantiate h f[x -> a1, ..., xn -> an] body
+
+    3. Handle indirection on the stack
+          (a : s,  d, h[a : NPointer a1], f)
+       -> (a1 : s, d, h,                  f)
 -}
 
 -- Extra definitions to add to initial global environment
@@ -91,17 +96,35 @@ isData _        = False
 
 -- Perform a single reduction from one state to the next
 step :: TIState -> TIState
-step state = dispatch (load heap (head stack)) where
-    (stack, dump, heap, globals, steps) = state
+step state = dispatch (load heap top) where
+    (stack@(top:rest), dump, heap, globals, steps) = state
+
+    -- Can't apply number
     dispatch (NNum n) = error "Number applied as a function"
+
+    -- Unwind spine onto stack
     dispatch (NApp a1 a2) = (a1:stack, dump, heap, globals, steps)
-    dispatch (NCombinator name args body) = (stack', dump, heap', globals, steps) where
+
+    -- Dereference pointer and replace with value on stack
+    dispatch (NPointer a) = (a:rest, dump, heap, globals, steps)
+
+    -- Apply combinator
+    dispatch (NCombinator name args body) = (stack', dump, heap'', globals, steps) where
+        -- Bind arguments
+        env = bindings ++ globals
+        bindings = zip args (getArgs heap stack)
+
+        -- Instantiate combinator body
+        (heap', result) = instantiate heap env body
+
+        -- Update stack
         expect = length args + 1
         stack' | expect > length stack = error ("Not enough arguments for supercombinator " ++ name)
                | otherwise             = result:drop expect stack
-        (heap', result) = instantiate heap env body
-        env = bindings ++ globals
-        bindings = zip args (getArgs heap stack)
+
+        -- Update root of redex to point to result
+        root = stack !! (expect - 1)
+        heap'' = update heap' root $ NPointer result
 
 -- Load arguments from heap
 getArgs :: Heap Node -> Stack -> [Addr]
@@ -185,6 +208,7 @@ formatNode :: Node -> Doc
 formatNode (NApp a1 a2) = text "NApp" <+> formatAddr a1 <+> formatAddr a2
 formatNode (NCombinator name args body) = text "NCombinator" <+> text name
 formatNode (NNum n) =  text "NNum" <+> int n
+formatNode (NPointer a) =  text "NPointer" <+> formatAddr a
 
 -- Format an address
 formatAddr :: Addr -> Doc
