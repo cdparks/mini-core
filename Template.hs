@@ -23,11 +23,24 @@ initialDump = DummyDump
 -- Count number of steps taken 
 type Steps = Int
 
+-- Heap data
 data Node = NApp Addr Addr
           | NCombinator Name [Name] Expr
           | NNum Int
           | NPointer Addr
             deriving Show
+
+-- Count node types in heap
+data Usage = Usage {
+    apps :: Int,
+    combinators :: Int,
+    nums :: Int,
+    pointers :: Int
+}
+
+-- Evaluate with stats or silently
+data Volume = Silent
+            | Verbose
 
 -- state = (s, d, h, f)
 type TIState = (Stack, Dump, Heap Node, Globals, Steps)
@@ -171,10 +184,9 @@ addBindings bindings heap env = foldr addBinding (heap, []) bindings where
         in (heap'', (name, addr):env')
 
 -- Parse, compile, and reduce program.
-run :: Bool -> String -> String
-run verbose = show . result . eval . compile . parseCore where
-    result | verbose   = formatStates
-           | otherwise = formatLast
+run :: Volume -> String -> String
+run Verbose = show . formatStates . eval . compile . parseCore
+run Silent = show . formatLast . eval . compile . parseCore
 
 -- Format final result of computation
 formatLast :: [TIState] -> Doc
@@ -188,16 +200,35 @@ formatStates = vcat . map formatState . zip [1..]
 
 -- Format a single computation state 
 formatState :: (Int, TIState) -> Doc
-formatState (num, (stack, _, heap, _, _)) = text "State" <+> int num <> colon $$ nest 4 (formatStack heap stack)
+formatState (num, (stack, _, heap, _, _)) = text "State" <+> int num <> colon $$ (nest 4 $ formatStack heap stack $$ formatHeap heap stack)
 
 -- Format the stack as a tree of applications
 formatStack :: Heap Node -> Stack -> Doc
-formatStack heap (x:xs) = foldr draw (formatHeapNode heap x) (reverse xs) where
+formatStack heap (x:xs) = text "Stack" <> colon $$ nest 4 (foldr draw (formatHeapNode heap x) (reverse xs)) where
     draw addr doc = text "@" <> nest 1 (text "---" <+> formatValue addr $$ text "\\" $$ nest 1 doc)
     formatTop addr = formatAddr addr <+> formatNode (load heap addr)
     formatValue addr = case load heap addr of
         NApp a1 a2 -> formatHeapNode heap a2
         node       -> formatAddr addr <> colon <+> formatNode node
+
+-- Format the heap as number of allocations
+formatHeap :: Heap Node -> Stack -> Doc
+formatHeap (size, _, env) _ = text "Heap" <> colon $$ nest 4 (formatUsage size (calculateUsage env))
+
+calculateUsage :: [(Addr, Node)] -> Usage
+calculateUsage env = foldr count (Usage 0 0 0 0) (map snd env) where
+    count (NApp _ _) usage = usage {apps = apps usage + 1}
+    count (NCombinator _ _ _) usage = usage {combinators = combinators usage + 1}
+    count (NNum _) usage = usage {nums = nums usage + 1}
+    count (NPointer _) usage = usage {pointers = pointers usage + 1}
+
+formatUsage :: Int -> Usage -> Doc
+formatUsage total (Usage apps combinators nums pointers) = vcat [
+    text "Applications" <> colon <+> int apps,
+    text "Combinators" <> colon <+> int combinators,
+    text "Numbers" <> colon <+> int nums,
+    text "Pointers" <> colon <+> int pointers,
+    text "Total" <> colon <+> int total]
 
 -- Load a value from the heap. Format its address and value.
 formatHeapNode :: Heap Node -> Addr -> Doc
