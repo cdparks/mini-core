@@ -122,22 +122,20 @@ step state = dispatch (load heap top) where
     dispatch (NPointer a) = (a:rest, dump, heap, globals, steps)
 
     -- Apply combinator
-    dispatch (NCombinator name args body) = (stack', dump, heap'', globals, steps) where
+    dispatch (NCombinator name args body) = (stack', dump, heap', globals, steps) where
         -- Bind arguments
         env = bindings ++ globals
         bindings = zip args (getArgs heap stack)
 
-        -- Instantiate combinator body
-        (heap', result) = instantiate heap env body
+        -- Update root of redex to point to result
+        root = stack !! (expect - 1)
+        heap' = instantiateAndUpdate heap env body root
 
         -- Update stack
         expect = length args + 1
         stack' | expect > length stack = error ("Not enough arguments for supercombinator " ++ name)
-               | otherwise             = result:drop expect stack
+               | otherwise             = root:drop expect stack
 
-        -- Update root of redex to point to result
-        root = stack !! (expect - 1)
-        heap'' = update heap' root $ NPointer result
 
 -- Load arguments from heap
 getArgs :: Heap Node -> Stack -> [Addr]
@@ -145,6 +143,38 @@ getArgs heap (combinator:stack) = map getArg stack where
     getArg addr = case load heap addr of
         (NApp fun arg) -> arg
         _              -> error "Missing argument"
+
+-- Create heap node from expression and update redex root address 
+-- to point to result
+instantiateAndUpdate :: Heap Node -> [(Name, Addr)] -> Expr -> Addr -> Heap Node
+instantiateAndUpdate heap env expr addr = build expr where
+    -- Build number on heap
+    build (Num n) = update heap addr (NNum n)
+
+    -- Look up variable in environment
+    build (Var v) = case lookup v env of
+        Just value -> update heap addr (NPointer value)
+        Nothing    -> error ("Undefined name " ++ v)
+
+    -- Instantiate function and argument and build application
+    build (App e1 e2) =
+        let (heap',  a1) = instantiate heap  env e1
+            (heap'', a2) = instantiate heap' env e2
+        in update heap'' addr (NApp a1 a2)
+
+    -- Instantiate each expression, add each binding to environment, and then
+    -- instantiate body
+    build (Let recursive bindings body) =
+        let (heap', letEnv') = addBindings bindings heap letEnv
+            letEnv | recursive = env' -- letrec, bindings can refer to each other
+                   | otherwise = env  -- let, bindings can refer to current environment
+            env' = letEnv' ++ env
+            (heap'', addr') = instantiate heap' env' body
+        in update heap'' addr (NPointer addr')
+
+    -- Not supported yet
+    build (Cons _ _) = error "Can't instantiate constructors yet"
+    build (Case _ _) = error "Can't instantiate case expressions yet"
 
 -- Create heap node from expression
 instantiate :: Heap Node -> [(Name, Addr)] -> Expr -> (Heap Node, Addr)
