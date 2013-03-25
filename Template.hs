@@ -15,10 +15,9 @@ type Stack = [Addr]
 -- Pointers to supercombinators and primitives
 type Globals = [(Name, Addr)]
 
--- State of spine stack before evaluating the argument of 
--- a strict primitive. Dummy constructor for now.
-data Dump = DummyDump
-initialDump = DummyDump
+-- Stack of stacks
+type Dump = [Stack]
+initialDump = []
 
 -- Count number of steps taken 
 type Steps = Int
@@ -28,7 +27,16 @@ data Node = NApp Addr Addr
           | NCombinator Name [Name] Expr
           | NNum Int
           | NPointer Addr
+          | NPrim Name Primitive
             deriving Show
+
+-- Primitive (strict) operations
+data Primitive = Negate
+               | Add
+               | Subtract
+               | Multiply
+               | Divide
+                 deriving Show
 
 -- Count node types in heap
 data Usage = Usage {
@@ -48,18 +56,59 @@ type TIState = (Stack, Dump, Heap Node, Globals, Steps)
 {-
     Transitions from (s, d, h, f) -> (s', d', h', f'):
 
+    0. Dereference pointer arguments before unwinding
+          (a : s, d, h[(a, NApp a1 a2), (a2, NPointer a3)], f)
+       -> (a : s, d, h[(a, NApp a1 a3)],                    f)
+
     1. Unwind a single application node onto the stack:
-          (a : s,     d, h[a : NApp a1 a2], f)
-       -> (a1 : a: s, d, h[a : NApp a1 a2], f)
+          (a : s,     d, h[(a, NApp a1 a2)], f)
+       -> (a1 : a: s, d, h,                  f)
 
     2. Perform supercombinator reduction updating the root of the redex:
-          (a0: a1 : ... : an : s, d, h[a0 : NCombinator [x1, ..., xn] body], f)
-       -> (ar : s,                d, h'[an : NPointer ar],                   f)
+          (a0: a1 : ... : an : s, d, h [(a0, NCombinator [x1, ..., xn] body)], f)
+       -> (ar : s,                d, h'[(an, NPointer ar)],                    f)
        where (h', ar) = instantiate h f[x -> a1, ..., xn -> an] body
 
     3. Handle indirection on the stack
-          (a : s,  d, h[a : NPointer a1], f)
-       -> (a1 : s, d, h,                  f)
+          (a : s,  d, h[(a, NPointer a1)], f)
+       -> (a1 : s, d, h,                   f)
+
+    4. Handle unary arithmetic
+    
+       Already evaluated numeric argument
+          (a : a1 : [], d, h[(a, NPrim Negate) : (a1, NApp a b) : (b, NNum n)], f)
+       -> (a1 : [],     d, h[(a1, NNum (-n))],                                  f)
+    
+       Save stack above un-evaluated argument in dump and...
+          (a : a1 : [], d,             h[(a, NPrim Negate) : (a1, NApp a b)], f)
+       -> (b : [],      (a1 : []) : d, h,                                     f)
+
+       ...Evaluate argument and restore stack
+          (a : [], s : d, h[(a, NNum n)], f)
+       -> (s,      d,     h,              f)
+
+    5. Handle binary arithmetic
+
+       Already evaluated numeric arguments
+          (a : b : c : [], d, h[(a, NPrim Add), (b, NApp a d), (c, NApp b e), (d, NNum n), (e, NNum m)], f)
+       -> (c : [],         d, h[(c, NNum (n + m))],                                                      f)
+
+       For _ + App, save stack above un-evaluated argument in dump and...
+          (a : b : c : [], d,            h[(a, NPrim Add), (b, NApp a d), (c, NApp b e), (d, NNum n), (e, NApp 1 2)], f)
+       -> (c : [],         (b : []) : d, h,                                                                           f)
+
+       ...Evaluate argument and restore stack
+          (c : [], s : d, h[(c, NNum n)], f)
+       -> (s,      d,     h,              f)
+
+       Then, for App + Num, save stack above un-evaluated numeric argument and...
+          (a : b : c : [], d,            h[(a, NPrim Add), (b, NApp a d), (c, NApp b e), (d, NNum 23), (e, NApp 1 2)], f)
+       -> (b : c : [],     (a : []) : d, h,                                                                            f)
+
+       ...Evaluate argument and restore stack
+             (b : c : [], s : d, h[(b, NNum n)], f)
+          -> (s,      d,     h,                  f)
+
 -}
 
 -- Extra definitions to add to initial global environment
@@ -77,11 +126,29 @@ compile program = (stack, dump, heap, globals, steps) where
         Just addr -> addr
         Nothing   -> error "main is not defined"
 
+-- Map var names to primitives
+primitives = [
+    ("negate", Negate),
+    ("+", Add),
+    ("-", Subtract),
+    ("*", Mul),
+    ("/", Div)]
+
 -- Build initial heap from list of supercombinators
 buildInitialHeap :: [Combinator] -> (Heap Node, Globals)
-buildInitialHeap = mapAccumL allocCombinator heapInit where
-    allocCombinator heap (name, args, body) = (heap', (name, addr)) where
-        (heap', addr) = alloc heap (NCombinator name args body)
+buildInitialHeap combinators = (heap'', caddrs ++ paddrs) where
+    (heap',  caddrs) = mapAccumL allocCombinator heapInit combinators
+    (heap'', paddrs)  = mapAccumL allocPrimitive heap' primitives
+
+-- Allocate a single combinator
+allocCombinator :: Heap Node -> (Name, Combinator) -> (Heap Node, (Name, Addr))
+allocCombinator heap (name, args, body) = (heap', (name, addr)) where
+    (heap', addr) = alloc heap (NCombinator name args body)
+
+-- Allocate a single primitive
+allocPrimitive :: Heap Node -> (Name, Primitive) -> (Heap Node, (Name, Addr))
+allocPrimitive heap (name, primitive) = (heap', (name, addr)) where
+    (heap', addr) = alloc heap (NPrim name primitive)
 
 -- Increment number of steps in reduction
 incSteps :: TIState -> TIState
@@ -135,6 +202,11 @@ step state = dispatch (load heap top) where
         expect = length args + 1
         stack' | expect > length stack = error ("Not enough arguments for supercombinator " ++ name)
                | otherwise             = root:drop expect stack
+
+    -- Apply primitive
+    dispatch (NPrim name primitive) = (stack', dump, heap', globals, steps) where
+        -- Bind arguments
+        env = bindings ++ globals
 
 
 -- Load arguments from heap
