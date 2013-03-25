@@ -40,10 +40,11 @@ data Primitive = Negate
 
 -- Count node types in heap
 data Usage = Usage {
-    apps :: Int,
-    combinators :: Int,
-    nums :: Int,
-    pointers :: Int
+    numCount :: Int,
+    appCount :: Int,
+    pointerCount :: Int,
+    primitiveCount :: Int,
+    combinatorCount :: Int
 }
 
 -- Evaluate with stats or silently
@@ -131,8 +132,8 @@ primitives = [
     ("negate", Negate),
     ("+", Add),
     ("-", Subtract),
-    ("*", Mul),
-    ("/", Div)]
+    ("*", Multiply),
+    ("/", Divide)]
 
 -- Build initial heap from list of supercombinators
 buildInitialHeap :: [Combinator] -> (Heap Node, Globals)
@@ -141,7 +142,7 @@ buildInitialHeap combinators = (heap'', caddrs ++ paddrs) where
     (heap'', paddrs)  = mapAccumL allocPrimitive heap' primitives
 
 -- Allocate a single combinator
-allocCombinator :: Heap Node -> (Name, Combinator) -> (Heap Node, (Name, Addr))
+allocCombinator :: Heap Node -> Combinator -> (Heap Node, (Name, Addr))
 allocCombinator heap (name, args, body) = (heap', (name, addr)) where
     (heap', addr) = alloc heap (NCombinator name args body)
 
@@ -204,9 +205,7 @@ step state = dispatch (load heap top) where
                | otherwise             = root:drop expect stack
 
     -- Apply primitive
-    dispatch (NPrim name primitive) = (stack', dump, heap', globals, steps) where
-        -- Bind arguments
-        env = bindings ++ globals
+    dispatch (NPrim name primitive) = undefined
 
 
 -- Load arguments from heap
@@ -318,19 +317,21 @@ formatHeap :: Heap Node -> Stack -> Doc
 formatHeap (size, _, env) _ = text "Heap" <> colon $$ nest 4 (formatUsage size (calculateUsage env))
 
 calculateUsage :: [(Addr, Node)] -> Usage
-calculateUsage env = foldr count (Usage 0 0 0 0) (map snd env) where
-    count (NApp _ _) usage = usage {apps = apps usage + 1}
-    count (NCombinator _ _ _) usage = usage {combinators = combinators usage + 1}
-    count (NNum _) usage = usage {nums = nums usage + 1}
-    count (NPointer _) usage = usage {pointers = pointers usage + 1}
+calculateUsage env = foldr count (Usage 0 0 0 0 0) (map snd env) where
+    count (NNum _)            usage = usage {numCount        = numCount        usage + 1}
+    count (NApp _ _)          usage = usage {appCount        = appCount        usage + 1}
+    count (NPointer _)        usage = usage {pointerCount    = pointerCount    usage + 1}
+    count (NPrim _ _)         usage = usage {primitiveCount  = primitiveCount  usage + 1}
+    count (NCombinator _ _ _) usage = usage {combinatorCount = combinatorCount usage + 1}
 
 formatUsage :: Int -> Usage -> Doc
-formatUsage total (Usage apps combinators nums pointers) = vcat [
-    text "Applications" <> colon <+> int apps,
-    text "Combinators" <> colon <+> int combinators,
-    text "Numbers" <> colon <+> int nums,
-    text "Pointers" <> colon <+> int pointers,
-    text "Total" <> colon <+> int total]
+formatUsage total usage = vcat [
+    text "Numbers"      <> colon <+> int (numCount usage),
+    text "Applications" <> colon <+> int (appCount usage),
+    text "Pointers"     <> colon <+> int (pointerCount usage),
+    text "Primitives"   <> colon <+> int (primitiveCount usage),
+    text "Combinators"  <> colon <+> int (combinatorCount usage),
+    text "Total"        <> colon <+> int total]
 
 -- Load a value from the heap. Format its address and value.
 formatHeapNode :: Heap Node -> Addr -> Doc
