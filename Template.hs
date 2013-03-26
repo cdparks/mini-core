@@ -205,8 +205,32 @@ step state = dispatch (load heap top) where
                | otherwise             = root:drop expect stack
 
     -- Apply primitive
-    dispatch (NPrim name primitive) = undefined
+    dispatch (NPrim name primitive) = case primitive of
+        Negate   -> primNeg state
+        Add      -> error "Not implemented yet"
+        Subtract -> error "Not implemented yet"
+        Multiply -> error "Not implemented yet"
+        Divide   -> error "Not implemented yet"
 
+primNeg :: TIState -> TIState
+primNeg state = state' where
+    (stack, dump, heap, globals, steps) = state
+    addr = head $ getArgs heap stack
+    arg = load heap addr
+    state' | isData arg = doNegation addr arg state
+           | otherwise  = deferEvaluation addr state
+
+doNegation :: Addr -> Node -> TIState -> TIState
+doNegation addr node state = (stack', dump, heap', globals, steps) where
+    (stack, dump, heap, globals, steps) = state
+    root = stack !! 1
+    negated = case node of
+        NNum n -> NNum $ negate n
+        _      -> error "Expected numeric argument"
+    heap' = update heap root negated
+    stack' = tail stack
+
+deferEvaluation = undefined
 
 -- Load arguments from heap
 getArgs :: Heap Node -> Stack -> [Addr]
@@ -343,6 +367,7 @@ formatNode (NApp a1 a2) = text "NApp" <+> formatAddr a1 <+> formatAddr a2
 formatNode (NCombinator name args body) = text "NCombinator" <+> text name
 formatNode (NNum n) =  text "NNum" <+> int n
 formatNode (NPointer a) =  text "NPointer" <+> formatAddr a
+formatNode (NPrim name prim) =  text "NPrim" <+> text name
 
 -- Format an address
 formatAddr :: Addr -> Doc
