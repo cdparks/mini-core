@@ -166,7 +166,7 @@ eval state = state:rest where
 
 -- Should reduction halt?
 isFinal :: TIState -> Bool
-isFinal ([addr], _, heap, _, _) = isData (load heap addr)
+isFinal ([addr], [], heap, _, _) = isData (load heap addr)
 isFinal ([], _, _, _, _)        = error "Stack underflow"
 isFinal _                       = False
 
@@ -180,11 +180,17 @@ step :: TIState -> TIState
 step state = dispatch (load heap top) where
     (stack@(top:rest), dump, heap, globals, steps) = state
 
-    -- Can't apply number
-    dispatch (NNum n) = error "Number applied as a function"
+    -- If number is on top, we must have deferred some
+    -- primitive computation. Move it from the dump to the stack
+    dispatch (NNum n) = case dump of
+        d:ds -> (d, ds, heap, globals, steps)
+        _    -> error "Can't apply number as function"
 
-    -- Unwind spine onto stack
-    dispatch (NApp a1 a2) = (a1:stack, dump, heap, globals, steps)
+    -- Unwind spine onto stack, removing indirections from the
+    -- argument if present.
+    dispatch (NApp a1 a2) = case load heap a2 of
+        NPointer a3 -> (a1:stack, dump, update heap top (NApp a1 a3), globals, steps)
+        _           -> (a1:stack, dump, heap, globals, steps)
 
     -- Dereference pointer and replace with value on stack
     dispatch (NPointer a) = (a:rest, dump, heap, globals, steps)
@@ -206,31 +212,38 @@ step state = dispatch (load heap top) where
 
     -- Apply primitive
     dispatch (NPrim name primitive) = case primitive of
-        Negate   -> primNeg state
+        Negate   -> primUnary negate state
         Add      -> error "Not implemented yet"
         Subtract -> error "Not implemented yet"
         Multiply -> error "Not implemented yet"
         Divide   -> error "Not implemented yet"
 
-primNeg :: TIState -> TIState
-primNeg state = state' where
+-- Either apply unary primitive or set up evaluation of
+-- argument to unary primitive
+primUnary :: (Int -> Int) -> TIState -> TIState
+primUnary f state = state' where
     (stack, dump, heap, globals, steps) = state
     addr = head $ getArgs heap stack
     arg = load heap addr
-    state' | isData arg = doNegation addr arg state
+    state' | isData arg = doUnary f addr arg state
            | otherwise  = deferEvaluation addr state
 
-doNegation :: Addr -> Node -> TIState -> TIState
-doNegation addr node state = (stack', dump, heap', globals, steps) where
-    (stack, dump, heap, globals, steps) = state
-    root = stack !! 1
+-- Apply unary primitive to evaluated argument
+doUnary :: (Int -> Int) -> Addr -> Node -> TIState -> TIState
+doUnary f addr node state = (stack', dump, heap', globals, steps) where
+    (_:root:stack, dump, heap, globals, steps) = state
     negated = case node of
-        NNum n -> NNum $ negate n
+        NNum n -> NNum $ f n
         _      -> error "Expected numeric argument"
     heap' = update heap root negated
-    stack' = tail stack
+    stack' = root:stack
 
-deferEvaluation = undefined
+-- Save stack to dump to allow for evaluation of argument
+deferEvaluation :: Addr -> TIState -> TIState
+deferEvaluation addr state = (stack', dump', heap, globals, steps) where
+    (_:root:stack, dump, heap, globals, steps) = state
+    dump' = [root]:dump
+    stack' = addr:stack
 
 -- Load arguments from heap
 getArgs :: Heap Node -> Stack -> [Addr]
