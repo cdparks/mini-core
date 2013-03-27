@@ -7,6 +7,7 @@ import Parse (parseCore)
 
 import Data.List
 import Text.PrettyPrint
+import Debug.Trace
 
 -- Stack of pointers to nodes in the spine 
 -- of the current expression
@@ -160,9 +161,9 @@ incSteps (stack, dump, heap, globals, steps) =
 -- previous states
 eval :: TIState -> [TIState]
 eval state = state:rest where
-    next                = step (incSteps state)
+    next                 = step (incSteps state)
     rest | isFinal state = []
-         | otherwise    = eval next
+         | otherwise     = eval next
 
 -- Should reduction halt?
 isFinal :: TIState -> Bool
@@ -221,64 +222,43 @@ step state = dispatch (load heap top) where
 -- Either apply unary primitive or set up evaluation of
 -- argument to unary primitive
 primUnary :: (Int -> Int) -> TIState -> TIState
-primUnary f state = state' where
-    (stack, dump, heap, globals, steps) = state
-    addr = head $ getArgs heap stack
+primUnary f ((_:root:stack), dump, heap, globals, steps) = state' where
+    addr = getArg heap root
     arg = load heap addr
-    state' | isData arg = doUnary f arg state
-           | otherwise  = evaluateFirstArg addr state
-
--- Apply unary primitive to evaluated argument
-doUnary :: (Int -> Int) -> Node -> TIState -> TIState
-doUnary f node state = (stack', dump, heap', globals, steps) where
-    (_:root:stack, dump, heap, globals, steps) = state
-    value = case node of
-        NNum n -> NNum $ f n
-        _      -> error "Expected numeric argument"
-    heap' = update heap root value
-    stack' = root:stack
+    state' | isData arg = (root:stack, dump, update heap root (doUnary f arg), globals, steps)
+           | otherwise  = (addr:stack, [root]:dump, heap, globals, steps)
+primUnary _ _ = error "Malformed unary primitive expression"
 
 -- Either apply binary primitive or set up evaluation of
 -- arguments to binary primitive
 primBinary :: (Int -> Int -> Int) -> TIState -> TIState
-primBinary f state = state' where
-    (stack, dump, heap, globals, steps) = state
-    [px, py] = take 2 $ getArgs heap stack
-    (x, y) = (load heap px, load heap py)
-    state' | isData x && isData y = doBinary f x y state
-           | isData y             = evaluateFirstArg px state
-           | otherwise            = evaluateSecondArg py state
+primBinary f ((_:xRoot:yRoot:stack), dump, heap, globals, steps) = state' where
+    (xAddr, yAddr) = (getArg heap xRoot, getArg heap yRoot)
+    (x, y) = (load heap xAddr, load heap yAddr)
+    state' | isData x && isData y = (yRoot:stack, dump, update heap yRoot (doBinary f x y), globals, steps)
+           | isData y             = (xAddr:yRoot:stack, [xRoot]:dump, heap, globals, steps)
+           | otherwise            = (yAddr:stack,       [yRoot]:dump, heap, globals, steps)
+primBinary _ _ = error "Malformed binary primitive expression"
+
+-- Apply unary primitive to evaluated argument
+doUnary :: (Int -> Int) -> Node -> Node
+doUnary f (NNum n) = NNum $ f n
+doUnary _ _        = error "Expected numeric argument"
 
 -- Apply binary primitive to evaluated arguments
-doBinary :: (Int -> Int -> Int) -> Node -> Node -> TIState -> TIState
-doBinary f nx ny state = (stack', dump, heap', globals, steps) where
-    (_:_:root:stack, dump, heap, globals, steps) = state
-    value = case (nx, ny) of
-        (NNum x, NNum y) -> NNum $ f x y
-        _                -> error "Expected numeric argument(s)"
-    heap' = update heap root value
-    stack' = root:stack
-
--- Save stack to dump to allow for evaluation of first argument
-evaluateFirstArg :: Addr -> TIState -> TIState
-evaluateFirstArg addr state = (stack', dump', heap, globals, steps) where
-    (_:root:stack, dump, heap, globals, steps) = state
-    dump' = [root]:dump
-    stack' = addr:stack
-
--- Save stack to dump to allow for evaluation of second argument
-evaluateSecondArg :: Addr -> TIState -> TIState
-evaluateSecondArg addr state = (stack', dump', heap, globals, steps) where
-    (_:_:root:stack, dump, heap, globals, steps) = state
-    dump' = [root]:dump
-    stack' = addr:stack
+doBinary :: (Int -> Int -> Int) -> Node -> Node -> Node
+doBinary f (NNum x) (NNum y) = NNum $ f x y
+doBinary f _ _               = error "Expected numeric argument(s)"
 
 -- Load arguments from heap
 getArgs :: Heap Node -> Stack -> [Addr]
-getArgs heap (combinator:stack) = map getArg stack where
-    getArg addr = case load heap addr of
-        (NApp fun arg) -> arg
-        _              -> error "Missing argument"
+getArgs heap (combinator:stack) = map (getArg heap) stack
+
+-- Load a single argument from heap
+getArg :: Heap Node -> Addr -> Addr
+getArg heap addr = case load heap addr of
+    (NApp fun arg) -> arg
+    _              -> error "Missing argument"
 
 -- Create heap node from expression and update redex root address 
 -- to point to result
