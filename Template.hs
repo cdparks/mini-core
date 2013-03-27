@@ -183,7 +183,7 @@ step state = dispatch (load heap top) where
     -- If number is on top, we must have deferred some
     -- primitive computation. Move it from the dump to the stack
     dispatch (NNum n) = case dump of
-        d:ds -> (d, ds, heap, globals, steps)
+        d:ds -> (d ++ rest, ds, heap, globals, steps)
         _    -> error "Can't apply number as function"
 
     -- Unwind spine onto stack, removing indirections from the
@@ -213,10 +213,10 @@ step state = dispatch (load heap top) where
     -- Apply primitive
     dispatch (NPrim name primitive) = case primitive of
         Negate   -> primUnary negate state
-        Add      -> error "Not implemented yet"
-        Subtract -> error "Not implemented yet"
-        Multiply -> error "Not implemented yet"
-        Divide   -> error "Not implemented yet"
+        Add      -> primBinary (+) state
+        Subtract -> primBinary (-) state
+        Multiply -> primBinary (*) state
+        Divide   -> primBinary div state
 
 -- Either apply unary primitive or set up evaluation of
 -- argument to unary primitive
@@ -225,23 +225,51 @@ primUnary f state = state' where
     (stack, dump, heap, globals, steps) = state
     addr = head $ getArgs heap stack
     arg = load heap addr
-    state' | isData arg = doUnary f addr arg state
-           | otherwise  = deferEvaluation addr state
+    state' | isData arg = doUnary f arg state
+           | otherwise  = evaluateFirstArg addr state
 
 -- Apply unary primitive to evaluated argument
-doUnary :: (Int -> Int) -> Addr -> Node -> TIState -> TIState
-doUnary f addr node state = (stack', dump, heap', globals, steps) where
+doUnary :: (Int -> Int) -> Node -> TIState -> TIState
+doUnary f node state = (stack', dump, heap', globals, steps) where
     (_:root:stack, dump, heap, globals, steps) = state
-    negated = case node of
+    value = case node of
         NNum n -> NNum $ f n
         _      -> error "Expected numeric argument"
-    heap' = update heap root negated
+    heap' = update heap root value
     stack' = root:stack
 
--- Save stack to dump to allow for evaluation of argument
-deferEvaluation :: Addr -> TIState -> TIState
-deferEvaluation addr state = (stack', dump', heap, globals, steps) where
+-- Either apply binary primitive or set up evaluation of
+-- arguments to binary primitive
+primBinary :: (Int -> Int -> Int) -> TIState -> TIState
+primBinary f state = state' where
+    (stack, dump, heap, globals, steps) = state
+    [px, py] = take 2 $ getArgs heap stack
+    (x, y) = (load heap px, load heap py)
+    state' | isData x && isData y = doBinary f x y state
+           | isData y             = evaluateFirstArg px state
+           | otherwise            = evaluateSecondArg py state
+
+-- Apply binary primitive to evaluated arguments
+doBinary :: (Int -> Int -> Int) -> Node -> Node -> TIState -> TIState
+doBinary f nx ny state = (stack', dump, heap', globals, steps) where
+    (_:_:root:stack, dump, heap, globals, steps) = state
+    value = case (nx, ny) of
+        (NNum x, NNum y) -> NNum $ f x y
+        _                -> error "Expected numeric argument(s)"
+    heap' = update heap root value
+    stack' = root:stack
+
+-- Save stack to dump to allow for evaluation of first argument
+evaluateFirstArg :: Addr -> TIState -> TIState
+evaluateFirstArg addr state = (stack', dump', heap, globals, steps) where
     (_:root:stack, dump, heap, globals, steps) = state
+    dump' = [root]:dump
+    stack' = addr:stack
+
+-- Save stack to dump to allow for evaluation of second argument
+evaluateSecondArg :: Addr -> TIState -> TIState
+evaluateSecondArg addr state = (stack', dump', heap, globals, steps) where
+    (_:_:root:stack, dump, heap, globals, steps) = state
     dump' = [root]:dump
     stack' = addr:stack
 
