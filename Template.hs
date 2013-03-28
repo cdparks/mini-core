@@ -24,11 +24,12 @@ initialDump = []
 type Steps = Int
 
 -- Heap data
-data Node = NApp Addr Addr
-          | NCombinator Name [Name] Expr
-          | NNum Int
-          | NPointer Addr
-          | NPrim Name Primitive
+data Node = NApp Addr Addr                  -- Application
+          | NCombinator Name [Name] Expr    -- Supercombinator
+          | NNum Int                        -- Number
+          | NPointer Addr                   -- Point to another node
+          | NPrim Name Primitive            -- Primitive operation
+          | NData Int [Addr]                -- Tag, components
             deriving Show
 
 -- Primitive (strict) operations
@@ -37,6 +38,14 @@ data Primitive = Negate
                | Subtract
                | Multiply
                | Divide
+               | If
+               | Greater
+               | GreaterEq
+               | Less
+               | LessEq
+               | Eq
+               | NotEq
+               | Construct Int Int
                  deriving Show
 
 -- Count node types in heap
@@ -75,7 +84,11 @@ type TIState = (Stack, Dump, Heap Node, Globals, Steps)
           (a : s,  d, h[(a, NPointer a1)], f)
        -> (a1 : s, d, h,                   f)
 
-    4. Handle unary arithmetic
+    4. Handle structured data
+          (a : a1 : ... : an : [],  d, h[(a, NPrimt (Construct t n)), (a1, NApp a b1) ... (an: NApp an-1, bn)], f)
+       -> (an : [],                 d, h[(an, NData t [b1..bn])],                                               f)
+
+    5. Handle unary arithmetic
     
        Already evaluated numeric argument
           (a : a1 : [], d, h[(a, NPrim Negate) : (a1, NApp a b) : (b, NNum n)], f)
@@ -89,7 +102,7 @@ type TIState = (Stack, Dump, Heap Node, Globals, Steps)
           (a : [], s : d, h[(a, NNum n)], f)
        -> (s,      d,     h,              f)
 
-    5. Handle binary arithmetic
+    6. Handle binary arithmetic
 
        Already evaluated numeric arguments
           (a : b : c : [], d, h[(a, NPrim Add), (b, NApp a d), (c, NApp b e), (d, NNum n), (e, NNum m)], f)
@@ -108,8 +121,8 @@ type TIState = (Stack, Dump, Heap Node, Globals, Steps)
        -> (b : c : [],     (a : []) : d, h,                                                                            f)
 
        ...Evaluate argument and restore stack
-             (b : c : [], s : d, h[(b, NNum n)], f)
-          -> (s,      d,     h,                  f)
+          (b : c : [], s : d, h[(b, NNum n)], f)
+       -> (s,      d,     h,                  f)
 
 -}
 
@@ -134,7 +147,11 @@ primitives = [
     ("+", Add),
     ("-", Subtract),
     ("*", Multiply),
-    ("/", Divide)]
+    ("/", Divide),
+    ("False", Construct 1 0),
+    ("True", Construct 2 0),
+    ("Cons", Construct 3 2),
+    ("Nil", Construct 4 0)]
 
 -- Build initial heap from list of supercombinators
 buildInitialHeap :: [Combinator] -> (Heap Node, Globals)
@@ -211,13 +228,18 @@ step state = dispatch (load heap top) where
         stack' | expect > length stack = error ("Not enough arguments for supercombinator " ++ name)
                | otherwise             = root:drop expect stack
 
+    -- Don't have transiations for this yet
+    dispatch x@(NData tag components) = error (show x)
+
     -- Apply primitive
     dispatch (NPrim name primitive) = case primitive of
-        Negate   -> primUnary negate state
-        Add      -> primBinary (+) state
-        Subtract -> primBinary (-) state
-        Multiply -> primBinary (*) state
-        Divide   -> primBinary div state
+        Negate              -> primUnary negate state
+        Add                 -> primBinary (+) state
+        Subtract            -> primBinary (-) state
+        Multiply            -> primBinary (*) state
+        Divide              -> primBinary div state
+        Construct tag arity -> primConstruct tag arity state
+        x                   -> error (show x ++ " not defined yet")
 
 -- Either apply unary primitive or set up evaluation of
 -- argument to unary primitive
@@ -249,6 +271,17 @@ doUnary _ _        = error "Expected numeric argument"
 doBinary :: (Int -> Int -> Int) -> Node -> Node -> Node
 doBinary f (NNum x) (NNum y) = NNum $ f x y
 doBinary f _ _               = error "Expected numeric argument(s)"
+
+-- Generate a new data node
+primConstruct :: Int -> Int -> TIState -> TIState
+primConstruct tag arity state = (stack', dump, heap', globals, steps) where
+    (stack, dump, heap, globals, steps) = state
+    expect = arity + 1
+    root = stack !! (expect - 1)
+    args = take arity $ getArgs heap stack
+    heap' = update heap root (NData tag args)
+    stack' | expect > length stack = error ("Not enough arguments for constructor")
+           | otherwise             = root:drop expect stack
 
 -- Load arguments from heap
 getArgs :: Heap Node -> Stack -> [Addr]
@@ -288,8 +321,10 @@ instantiateAndUpdate heap env expr addr = build expr where
             (heap'', addr') = instantiate heap' env' body
         in update heap'' addr (NPointer addr')
 
+    -- Convert data constructor to node
+    build (Cons tag arity) = update heap addr (NPrim "Pack" (Construct tag arity))
+
     -- Not supported yet
-    build (Cons _ _) = error "Can't instantiate constructors yet"
     build (Case _ _) = error "Can't instantiate case expressions yet"
 
 -- Create heap node from expression
@@ -318,8 +353,10 @@ instantiate heap env expr = build expr where
             env' = letEnv' ++ env
         in instantiate heap' env' body
 
+    -- Convert data constructor to node
+    build (Cons tag arity) = alloc heap (NPrim "Pack" (Construct tag arity))
+
     -- Not supported yet
-    build (Cons _ _) = error "Can't instantiate constructors yet"
     build (Case _ _) = error "Can't instantiate case expressions yet"
 
 -- Add let bindings to new heap and environment
