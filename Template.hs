@@ -41,8 +41,8 @@ data Primitive = Negate
                | If
                | Greater
                | GreaterEq
-               | Less
-               | LessEq
+               | Lesser
+               | LesserEq
                | Eq
                | NotEq
                | Construct Int Int
@@ -52,6 +52,7 @@ data Primitive = Negate
 data Usage = Usage {
     numCount :: Int,
     appCount :: Int,
+    dataCount :: Int,
     pointerCount :: Int,
     primitiveCount :: Int,
     combinatorCount :: Int
@@ -85,8 +86,8 @@ type TIState = (Stack, Dump, Heap Node, Globals, Steps)
        -> (a1 : s, d, h,                   f)
 
     4. Handle structured data
-          (a : a1 : ... : an : [],  d, h[(a, NPrimt (Construct t n)), (a1, NApp a b1) ... (an: NApp an-1, bn)], f)
-       -> (an : [],                 d, h[(an, NData t [b1..bn])],                                               f)
+          (a : a1 : ... : an : [],  d, h[(a, NPrim (Construct t n)), (a1, NApp a b1) ... (an: NApp an-1, bn)], f)
+       -> (an : [],                 d, h[(an, NData t [b1..bn])],                                              f)
 
     5. Handle unary arithmetic
     
@@ -124,10 +125,30 @@ type TIState = (Stack, Dump, Heap Node, Globals, Steps)
           (b : c : [], s : d, h[(b, NNum n)], f)
        -> (s,      d,     h,                  f)
 
+    7. Handle if-expression
+       If condition is True (NData 2 []), choose the first branch
+          (w : x : y : z : [], d, h[(w, NPrim If), (x, NData 2 []), (y, NApp x j), (z, NApp y k)], f)
+       -> (z : [],             d, h[(z, NPointer j)],                                              f)
+
+       If condition is False (NData 2 []), choose the second branch
+          (w : x : y : z : [], d, h[(w, NPrim If), (x, NData 1 []), (y, NApp x j), (z, NApp y k)], f)
+       -> (z : [],             d, h[(z, NPointer k)],                                              f)
+
+       For unevaluated condition, save stack above un-evaluated argument in dump...
+          (w : x : y : z : [], d,            h[(w, NPrim If), (x, NApp w i), (y, NApp x j), (z, NApp y k)], f)
+       -> (x : y : z : [],     (w : []) : d, h,                                                             f)
+
+       ...Evaluate argument and restore stack
+          (x : y : z : [], s : d, h[(x, NData _ [])], f)
+       -> (s,              d,     h,                  f)
+
 -}
 
 -- Extra definitions to add to initial global environment
-extraDefs = []
+extraDefs = [
+    ("and", ["x", "y"], App (App (App (Var "if") (Var "x")) (Var "y")) (Var "False")),
+    ("or",  ["x", "y"], App (App (App (Var "if") (Var "x")) (Var "True")) (Var "y")),
+    ("not", ["x"],      App (App (App (Var "if") (Var "x")) (Var "False")) (Var "True"))]
 
 -- Generate initial state from AST
 compile :: Program -> TIState
@@ -141,6 +162,12 @@ compile program = (stack, dump, heap, globals, steps) where
         Just addr -> addr
         Nothing   -> error "main is not defined"
 
+-- Primitive data constructors
+tiFalse = Construct 1 0
+tiTrue  = Construct 2 0
+tiCons  = Construct 3 2
+tiNil   = Construct 4 0
+
 -- Map var names to primitives
 primitives = [
     ("negate", Negate),
@@ -148,10 +175,17 @@ primitives = [
     ("-", Subtract),
     ("*", Multiply),
     ("/", Divide),
-    ("False", Construct 1 0),
-    ("True", Construct 2 0),
-    ("Cons", Construct 3 2),
-    ("Nil", Construct 4 0)]
+    ("<", Lesser),
+    (">", Greater),
+    ("<=", LesserEq),
+    (">=", GreaterEq),
+    ("==", Eq),
+    ("/=", NotEq),
+    ("if", If),
+    ("False", tiFalse),
+    ("True",  tiTrue),
+    ("Cons",  tiCons),
+    ("Nil",   tiNil)]
 
 -- Build initial heap from list of supercombinators
 buildInitialHeap :: [Combinator] -> (Heap Node, Globals)
@@ -190,8 +224,17 @@ isFinal _                       = False
 
 -- Is current Node data?
 isData :: Node -> Bool
-isData (NNum _) = True
-isData _        = False
+isData (NNum _)    = True
+isData (NData _ _) = True
+isData _           = False
+
+-- Is Node a representation of True?
+isTrue (NData 2 []) = True
+isTrue _            = False
+
+-- Is Node a representation of False?
+isFalse (NData 1 []) = True
+isFalse _            = False
 
 -- Perform a single reduction from one state to the next
 step :: TIState -> TIState
@@ -200,9 +243,15 @@ step state = dispatch (load heap top) where
 
     -- If number is on top, we must have deferred some
     -- primitive computation. Move it from the dump to the stack
-    dispatch (NNum n) = case dump of
+    dispatch (NNum _) = case dump of
         d:ds -> (d ++ rest, ds, heap, globals, steps)
         _    -> error "Can't apply number as function"
+
+    -- If a data node is on top, we must have deferred some
+    -- primitive computation. Move it from the dump to the stack
+    dispatch (NData _ _) = case dump of
+        d:ds -> (d ++ rest, ds, heap, globals, steps)
+        _    -> error "Can't apply data node as function"
 
     -- Unwind spine onto stack, removing indirections from the
     -- argument if present.
@@ -228,49 +277,68 @@ step state = dispatch (load heap top) where
         stack' | expect > length stack = error ("Not enough arguments for supercombinator " ++ name)
                | otherwise             = root:drop expect stack
 
-    -- Don't have transiations for this yet
-    dispatch x@(NData tag components) = error (show x)
-
     -- Apply primitive
     dispatch (NPrim name primitive) = case primitive of
-        Negate              -> primUnary negate state
-        Add                 -> primBinary (+) state
-        Subtract            -> primBinary (-) state
-        Multiply            -> primBinary (*) state
-        Divide              -> primBinary div state
+        -- Unary arithmetic
+        Negate              -> primUnary  (fromUnary negate)    state
+
+        -- Binary arithmetic
+        Add                 -> primBinary (fromBinary (+))      state
+        Subtract            -> primBinary (fromBinary (-))      state
+        Multiply            -> primBinary (fromBinary (*))      state
+        Divide              -> primBinary (fromBinary div)      state
+
+        -- Binary relational
+        Lesser              -> primBinary (fromRelational (<))  state
+        Greater             -> primBinary (fromRelational (>))  state
+        LesserEq            -> primBinary (fromRelational (<=)) state
+        GreaterEq           -> primBinary (fromRelational (>=)) state
+        Eq                  -> primBinary (fromRelational (==)) state
+        NotEq               -> primBinary (fromRelational (/=)) state
+
+        -- Structured data
         Construct tag arity -> primConstruct tag arity state
-        x                   -> error (show x ++ " not defined yet")
+
+        -- If expression
+        If                  -> primIf state
+
+-- Convert a unary arithmetic function into a function on nodes
+fromUnary :: (Int -> Int) -> (Node -> Node)
+fromUnary f (NNum x) = NNum $ f x
+fromUnary _ _        = error "Expected numeric argument"
+
+-- Convert a binary arithmetic function into a function on nodes
+fromBinary :: (Int -> Int -> Int) -> (Node -> Node -> Node)
+fromBinary f (NNum x) (NNum y) = NNum $ f x y
+fromBinary _ _ _               = error "Expected numeric argument(s)"
+
+-- Convert a binary relational function into a function on nodes
+fromRelational :: (Int -> Int -> Bool) -> (Node -> Node -> Node)
+fromRelational pred (NNum x) (NNum y)
+    | pred x y  = NData 2 []
+    | otherwise = NData 1 []
+fromRelational _ _ _ = error "Expected numeric argument(s)"
 
 -- Either apply unary primitive or set up evaluation of
 -- argument to unary primitive
-primUnary :: (Int -> Int) -> TIState -> TIState
+primUnary :: (Node -> Node) -> TIState -> TIState
 primUnary f ((_:root:stack), dump, heap, globals, steps) = state' where
     addr = getArg heap root
     arg = load heap addr
-    state' | isData arg = (root:stack, dump, update heap root (doUnary f arg), globals, steps)
+    state' | isData arg = (root:stack, dump, update heap root (f arg), globals, steps)
            | otherwise  = (addr:stack, [root]:dump, heap, globals, steps)
 primUnary _ _ = error "Malformed unary primitive expression"
 
 -- Either apply binary primitive or set up evaluation of
 -- arguments to binary primitive
-primBinary :: (Int -> Int -> Int) -> TIState -> TIState
+primBinary :: (Node -> Node -> Node) -> TIState -> TIState
 primBinary f ((_:xRoot:yRoot:stack), dump, heap, globals, steps) = state' where
     (xAddr, yAddr) = (getArg heap xRoot, getArg heap yRoot)
     (x, y) = (load heap xAddr, load heap yAddr)
-    state' | isData x && isData y = (yRoot:stack, dump, update heap yRoot (doBinary f x y), globals, steps)
+    state' | isData x && isData y = (yRoot:stack, dump, update heap yRoot (f x y), globals, steps)
            | isData y             = (xAddr:yRoot:stack, [xRoot]:dump, heap, globals, steps)
            | otherwise            = (yAddr:stack,       [yRoot]:dump, heap, globals, steps)
 primBinary _ _ = error "Malformed binary primitive expression"
-
--- Apply unary primitive to evaluated argument
-doUnary :: (Int -> Int) -> Node -> Node
-doUnary f (NNum n) = NNum $ f n
-doUnary _ _        = error "Expected numeric argument"
-
--- Apply binary primitive to evaluated arguments
-doBinary :: (Int -> Int -> Int) -> Node -> Node -> Node
-doBinary f (NNum x) (NNum y) = NNum $ f x y
-doBinary f _ _               = error "Expected numeric argument(s)"
 
 -- Generate a new data node
 primConstruct :: Int -> Int -> TIState -> TIState
@@ -282,6 +350,16 @@ primConstruct tag arity state = (stack', dump, heap', globals, steps) where
     heap' = update heap root (NData tag args)
     stack' | expect > length stack = error ("Not enough arguments for constructor")
            | otherwise             = root:drop expect stack
+
+-- If condition is evaluated, use it to choose the correct branch.
+-- Otherwise, put application on dump, and evaluate condition.
+primIf ((_:c:x:y:stack), dump, heap, globals, steps) = state' where
+    (cAddr, xAddr, yAddr) = (getArg heap c, getArg heap x, getArg heap y)
+    cond = load heap cAddr
+    state' | isData cond && isTrue cond  = (y:stack, dump, update heap y (NPointer xAddr), globals, steps)
+           | isData cond && isFalse cond = (y:stack, dump, update heap y (NPointer yAddr), globals, steps)
+           | otherwise                   = (cAddr:x:y:stack, [c]:dump, heap, globals, steps)
+primIf _ = error "Malformed if-expression"
 
 -- Load arguments from heap
 getArgs :: Heap Node -> Stack -> [Addr]
@@ -399,9 +477,10 @@ formatHeap :: Heap Node -> Stack -> Doc
 formatHeap (size, _, env) _ = text "Heap" <> colon $$ nest 4 (formatUsage size (calculateUsage env))
 
 calculateUsage :: [(Addr, Node)] -> Usage
-calculateUsage env = foldr count (Usage 0 0 0 0 0) (map snd env) where
+calculateUsage env = foldr count (Usage 0 0 0 0 0 0) (map snd env) where
     count (NNum _)            usage = usage {numCount        = numCount        usage + 1}
     count (NApp _ _)          usage = usage {appCount        = appCount        usage + 1}
+    count (NData _ _)         usage = usage {dataCount       = dataCount       usage + 1}
     count (NPointer _)        usage = usage {pointerCount    = pointerCount    usage + 1}
     count (NPrim _ _)         usage = usage {primitiveCount  = primitiveCount  usage + 1}
     count (NCombinator _ _ _) usage = usage {combinatorCount = combinatorCount usage + 1}
@@ -410,6 +489,7 @@ formatUsage :: Int -> Usage -> Doc
 formatUsage total usage = vcat [
     text "Numbers"      <> colon <+> int (numCount usage),
     text "Applications" <> colon <+> int (appCount usage),
+    text "Data"         <> colon <+> int (dataCount usage),
     text "Pointers"     <> colon <+> int (pointerCount usage),
     text "Primitives"   <> colon <+> int (primitiveCount usage),
     text "Combinators"  <> colon <+> int (combinatorCount usage),
@@ -421,11 +501,12 @@ formatHeapNode heap addr = formatAddr addr <> colon <+> formatNode (load heap ad
 
 -- Format a heap node
 formatNode :: Node -> Doc
-formatNode (NApp a1 a2) = text "NApp" <+> formatAddr a1 <+> formatAddr a2
+formatNode (NApp a1 a2)                 = text "NApp" <+> formatAddr a1 <+> formatAddr a2
 formatNode (NCombinator name args body) = text "NCombinator" <+> text name
-formatNode (NNum n) =  text "NNum" <+> int n
-formatNode (NPointer a) =  text "NPointer" <+> formatAddr a
-formatNode (NPrim name prim) =  text "NPrim" <+> text name
+formatNode (NNum n)                     = text "NNum" <+> int n
+formatNode (NPointer a)                 = text "NPointer" <+> formatAddr a
+formatNode (NPrim name prim)            = text "NPrim" <+> text name
+formatNode (NData tag addrs)            = text "NConstructor" <+> int tag <+> brackets (sep $ map formatAddr addrs)
 
 -- Format an address
 formatAddr :: Addr -> Doc
