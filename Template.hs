@@ -47,6 +47,8 @@ data Primitive = Negate
                | NotEq
                | Construct Int Int
                | CasePair
+               | CaseList
+               | Abort
                  deriving Show
 
 -- Count node types in heap
@@ -91,11 +93,11 @@ type TIState = (Stack, Dump, Heap Node, Globals, Steps)
        -> (an : [],                 d, h[(an, NData t [b1..bn])],                                              f)
 
     5. Handle unary arithmetic
-    
+
        Already evaluated numeric argument
           (a : a1 : [], d, h[(a, NPrim Negate) : (a1, NApp a b) : (b, NNum n)], f)
        -> (a1 : [],     d, h[(a1, NNum (-n))],                                  f)
-    
+
        Save stack above un-evaluated argument in dump and...
           (a : a1 : [], d,             h[(a, NPrim Negate) : (a1, NApp a b)], f)
        -> (b : [],      (a1 : []) : d, h,                                     f)
@@ -151,7 +153,9 @@ extraDefs = [
     ("or",  ["x", "y"], App (App (App (Var "if") (Var "x")) (Var "True")) (Var "y")),
     ("not", ["x"],      App (App (App (Var "if") (Var "x")) (Var "False")) (Var "True")),
     ("fst", ["p"],      App (App (Var "casePair") (Var "p")) (Var "K")),
-    ("snd", ["p"],      App (App (Var "casePair") (Var "p")) (Var "K1"))]
+    ("snd", ["p"],      App (App (Var "casePair") (Var "p")) (Var "K1")),
+    ("head", ["ls"],    App (App (App (Var "caseList") (Var "ls")) (Var "abort")) (Var "K")),
+    ("tail", ["ls"],    App (App (App (Var "caseList") (Var "ls")) (Var "abort")) (Var "K1"))]
 
 -- Generate initial state from AST
 compile :: Program -> TIState
@@ -187,6 +191,8 @@ primitives = [
     ("/=", NotEq),
     ("if", If),
     ("casePair", CasePair),
+    ("caseList", CaseList),
+    ("abort", Abort),
     ("False", tiFalse),
     ("True",  tiTrue),
     ("Cons",  tiCons),
@@ -246,12 +252,34 @@ isFalse _            = False
 isPair (NData 5 [_, _]) = True
 isPair _                = False
 
+-- Is Node a list?
+isList (NData 3 [_, _]) = True
+isList (NData 4 [])     = True
+isList _                = False
+
+-- Is Node a Cons cell?
+isCons (NData 3 [_, _]) = True
+isCons _                = False
+
+-- Is Node Nil?
+isNil (NData 4 [_, _])  = True
+isNil _                 = False
+
 -- Apply a function to the components of a pair
 pairApply heap (NData 5 [x, y]) f = (heap'', app) where
-    (heap', addr)  = alloc heap (NApp f x)
+    (heap',  addr)  = alloc heap  (NApp f x)
     (heap'', addr') = alloc heap' (NApp addr y)
     app = load heap'' addr'
-pairApply _ _ _                = error "Function expects a pair"
+pairApply _ _ _                   = error "Function expects a pair"
+
+-- If list is nil, return (heap, nil-value). Otherwise, return
+-- (heap', f head tail).
+listApply heap (NData 3 [x, xs]) _ f = (heap'', app) where
+    (heap',  addr)  = alloc heap  (NApp f x)
+    (heap'', addr') = alloc heap' (NApp addr xs)
+    app = load heap'' addr'
+listApply heap (NData 4 []) f _      = (heap, load heap f)
+listApply _ _ _ _                    = error "Function expects a list"
 
 -- Perform a single reduction from one state to the next
 step :: TIState -> TIState
@@ -316,9 +344,13 @@ step state = dispatch (load heap top) where
         -- Structured data
         Construct tag arity -> primConstruct tag arity state
         CasePair            -> primCasePair state
+        CaseList            -> primCaseList state
 
         -- If expression
         If                  -> primIf state
+
+        -- Abort 
+        Abort               -> error "Execution halted with abort"
 
 -- Convert a unary arithmetic function into a function on nodes
 fromUnary :: (Int -> Int) -> (Node -> Node)
@@ -379,9 +411,8 @@ primIf ((_:c:x:y:stack), dump, heap, globals, steps) = state' where
            | otherwise                   = (cAddr:x:y:stack, [c]:dump, heap, globals, steps)
 primIf _ = error "Malformed if-expression"
 
--- If pair is evaluted, apply function to it. Otherwise, put application on
+-- If pair is evaluated, apply function to it. Otherwise, put application on
 -- dump and evaluate pair.
-
 primCasePair ((_:p:f:stack), dump, heap, globals, steps) = state' where
     (pAddr, fAddr) = (getArg heap p, getArg heap f)
     pair = load heap pAddr
@@ -389,6 +420,16 @@ primCasePair ((_:p:f:stack), dump, heap, globals, steps) = state' where
     state' | isData pair && isPair pair = (f:stack, dump, update heap' f app, globals, steps)
            | otherwise                  = (pAddr:f:stack, [p]:dump, heap, globals, steps)
 primCasePair _ = error "Malformed casePair-expression"
+
+-- If list is evaluated, check if nil and apply appropriate function to it.
+-- Otherwise, put application on dump and evaluate list.
+primCaseList ((_:l:n:c:stack), dump, heap, globals, steps) = state' where
+    (lAddr, nAddr, cAddr) = (getArg heap l, getArg heap n, getArg heap c)
+    list = load heap lAddr
+    (heap', app) = listApply heap list nAddr cAddr
+    state' | isData list && isList list = (c:stack, dump, update heap' c app, globals, steps)
+           | otherwise                  = (lAddr:n:c:stack, [l]:dump, heap, globals, steps)
+primCaseList _ = error "Malformed caseList-expression"
 
 -- Load arguments from heap
 getArgs :: Heap Node -> Stack -> [Addr]
