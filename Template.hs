@@ -46,6 +46,7 @@ data Primitive = Negate
                | Eq
                | NotEq
                | Construct Int Int
+               | CasePair
                  deriving Show
 
 -- Count node types in heap
@@ -148,7 +149,9 @@ type TIState = (Stack, Dump, Heap Node, Globals, Steps)
 extraDefs = [
     ("and", ["x", "y"], App (App (App (Var "if") (Var "x")) (Var "y")) (Var "False")),
     ("or",  ["x", "y"], App (App (App (Var "if") (Var "x")) (Var "True")) (Var "y")),
-    ("not", ["x"],      App (App (App (Var "if") (Var "x")) (Var "False")) (Var "True"))]
+    ("not", ["x"],      App (App (App (Var "if") (Var "x")) (Var "False")) (Var "True")),
+    ("fst", ["p"],      App (App (Var "casePair") (Var "p")) (Var "K")),
+    ("snd", ["p"],      App (App (Var "casePair") (Var "p")) (Var "K1"))]
 
 -- Generate initial state from AST
 compile :: Program -> TIState
@@ -167,6 +170,7 @@ tiFalse = Construct 1 0
 tiTrue  = Construct 2 0
 tiCons  = Construct 3 2
 tiNil   = Construct 4 0
+tiPair  = Construct 5 2
 
 -- Map var names to primitives
 primitives = [
@@ -182,10 +186,12 @@ primitives = [
     ("==", Eq),
     ("/=", NotEq),
     ("if", If),
+    ("casePair", CasePair),
     ("False", tiFalse),
     ("True",  tiTrue),
     ("Cons",  tiCons),
-    ("Nil",   tiNil)]
+    ("Nil",   tiNil),
+    ("Pair",  tiPair)]
 
 -- Build initial heap from list of supercombinators
 buildInitialHeap :: [Combinator] -> (Heap Node, Globals)
@@ -235,6 +241,17 @@ isTrue _            = False
 -- Is Node a representation of False?
 isFalse (NData 1 []) = True
 isFalse _            = False
+
+-- Is Node a Pair?
+isPair (NData 5 [_, _]) = True
+isPair _                = False
+
+-- Apply a function to the components of a pair
+pairApply heap (NData 5 [x, y]) f = (heap'', app) where
+    (heap', addr)  = alloc heap (NApp f x)
+    (heap'', addr') = alloc heap' (NApp addr y)
+    app = load heap'' addr'
+pairApply _ _ _                = error "Function expects a pair"
 
 -- Perform a single reduction from one state to the next
 step :: TIState -> TIState
@@ -298,6 +315,7 @@ step state = dispatch (load heap top) where
 
         -- Structured data
         Construct tag arity -> primConstruct tag arity state
+        CasePair            -> primCasePair state
 
         -- If expression
         If                  -> primIf state
@@ -352,7 +370,7 @@ primConstruct tag arity state = (stack', dump, heap', globals, steps) where
            | otherwise             = root:drop expect stack
 
 -- If condition is evaluated, use it to choose the correct branch.
--- Otherwise, put application on dump, and evaluate condition.
+-- Otherwise, put application on dump and evaluate condition.
 primIf ((_:c:x:y:stack), dump, heap, globals, steps) = state' where
     (cAddr, xAddr, yAddr) = (getArg heap c, getArg heap x, getArg heap y)
     cond = load heap cAddr
@@ -360,6 +378,17 @@ primIf ((_:c:x:y:stack), dump, heap, globals, steps) = state' where
            | isData cond && isFalse cond = (y:stack, dump, update heap y (NPointer yAddr), globals, steps)
            | otherwise                   = (cAddr:x:y:stack, [c]:dump, heap, globals, steps)
 primIf _ = error "Malformed if-expression"
+
+-- If pair is evaluted, apply function to it. Otherwise, put application on
+-- dump and evaluate pair.
+
+primCasePair ((_:p:f:stack), dump, heap, globals, steps) = state' where
+    (pAddr, fAddr) = (getArg heap p, getArg heap f)
+    pair = load heap pAddr
+    (heap', app) = pairApply heap pair fAddr
+    state' | isData pair && isPair pair = (f:stack, dump, update heap' f app, globals, steps)
+           | otherwise                  = (pAddr:f:stack, [p]:dump, heap, globals, steps)
+primCasePair _ = error "Malformed casePair-expression"
 
 -- Load arguments from heap
 getArgs :: Heap Node -> Stack -> [Addr]
@@ -506,7 +535,7 @@ formatNode (NCombinator name args body) = text "NCombinator" <+> text name
 formatNode (NNum n)                     = text "NNum" <+> int n
 formatNode (NPointer a)                 = text "NPointer" <+> formatAddr a
 formatNode (NPrim name prim)            = text "NPrim" <+> text name
-formatNode (NData tag addrs)            = text "NConstructor" <+> int tag <+> brackets (sep $ map formatAddr addrs)
+formatNode (NData tag addrs)            = text "NData" <+> int tag <+> brackets (sep $ map formatAddr addrs)
 
 -- Format an address
 formatAddr :: Addr -> Doc
