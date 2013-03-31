@@ -9,6 +9,9 @@ import Data.List
 import Text.PrettyPrint
 import Debug.Trace
 
+-- List of Nodes to print once execution halts
+type Output = [Node]
+
 -- Stack of pointers to nodes in the spine 
 -- of the current expression
 type Stack = [Addr]
@@ -49,6 +52,8 @@ data Primitive = Negate
                | CasePair
                | CaseList
                | Abort
+               | Halt
+               | Print
                  deriving Show
 
 -- Count node types in heap
@@ -61,12 +66,8 @@ data Usage = Usage {
     combinatorCount :: Int
 }
 
--- Evaluate with stats or silently
-data Volume = Silent
-            | Verbose
-
--- state = (s, d, h, f)
-type TIState = (Stack, Dump, Heap Node, Globals, Steps)
+-- state = (o, s, d, h, f)
+type TIState = (Output, Stack, Dump, Heap Node, Globals, Steps)
 
 {-
     Transitions from (s, d, h, f) -> (s', d', h', f'):
@@ -159,9 +160,10 @@ extraDefs = [
 
 -- Generate initial state from AST
 compile :: Program -> TIState
-compile program = (stack, dump, heap, globals, steps) where
+compile program = (output, stack, dump, heap, globals, steps) where
     defs = program ++ prelude ++ extraDefs
     (heap, globals) = buildInitialHeap defs
+    output = []
     stack = [mainAddr]
     steps = 0
     dump = initialDump
@@ -193,6 +195,8 @@ primitives = [
     ("casePair", CasePair),
     ("caseList", CaseList),
     ("abort", Abort),
+    ("halt", Halt),
+    ("print", Print),
     ("False", tiFalse),
     ("True",  tiTrue),
     ("Cons",  tiCons),
@@ -217,8 +221,8 @@ allocPrimitive heap (name, primitive) = (heap', (name, addr)) where
 
 -- Increment number of steps in reduction
 incSteps :: TIState -> TIState
-incSteps (stack, dump, heap, globals, steps) =
-    (stack, dump, heap, globals, steps + 1)
+incSteps (output, stack, dump, heap, globals, steps) =
+    (output, stack, dump, heap, globals, steps + 1)
 
 -- Transition from one state to the next keeping track of all
 -- previous states
@@ -230,15 +234,20 @@ eval state = state:rest where
 
 -- Should reduction halt?
 isFinal :: TIState -> Bool
-isFinal ([addr], [], heap, _, _) = isData (load heap addr)
-isFinal ([], _, _, _, _)        = error "Stack underflow"
-isFinal _                       = False
+isFinal (_, [addr], [], heap, _, _) = isData value || isNum value where
+    value = load heap addr
+isFinal (_, [], _, _, _, _)         = True
+isFinal _                           = False
 
 -- Is current Node data?
 isData :: Node -> Bool
-isData (NNum _)    = True
 isData (NData _ _) = True
 isData _           = False
+
+-- Is current Node a number?
+isNum :: Node -> Bool
+isNum (NNum _) = True
+isNum _        = False
 
 -- Is Node a representation of True?
 isTrue (NData 2 []) = True
@@ -284,31 +293,31 @@ listApply _ _ _ _                    = error "Function expects a list"
 -- Perform a single reduction from one state to the next
 step :: TIState -> TIState
 step state = dispatch (load heap top) where
-    (stack@(top:rest), dump, heap, globals, steps) = state
+    (output, stack@(top:rest), dump, heap, globals, steps) = state
 
     -- If number is on top, we must have deferred some
     -- primitive computation. Move it from the dump to the stack
     dispatch (NNum _) = case dump of
-        d:ds -> (d ++ rest, ds, heap, globals, steps)
+        d:ds -> (output, d ++ rest, ds, heap, globals, steps)
         _    -> error "Can't apply number as function"
 
     -- If a data node is on top, we must have deferred some
     -- primitive computation. Move it from the dump to the stack
     dispatch (NData _ _) = case dump of
-        d:ds -> (d ++ rest, ds, heap, globals, steps)
+        d:ds -> (output, d ++ rest, ds, heap, globals, steps)
         _    -> error "Can't apply data node as function"
 
     -- Unwind spine onto stack, removing indirections from the
     -- argument if present.
     dispatch (NApp a1 a2) = case load heap a2 of
-        NPointer a3 -> (a1:stack, dump, update heap top (NApp a1 a3), globals, steps)
-        _           -> (a1:stack, dump, heap, globals, steps)
+        NPointer a3 -> (output, a1:stack, dump, update heap top (NApp a1 a3), globals, steps)
+        _           -> (output, a1:stack, dump, heap, globals, steps)
 
     -- Dereference pointer and replace with value on stack
-    dispatch (NPointer a) = (a:rest, dump, heap, globals, steps)
+    dispatch (NPointer a) = (output, a:rest, dump, heap, globals, steps)
 
     -- Apply combinator
-    dispatch (NCombinator name args body) = (stack', dump, heap', globals, steps) where
+    dispatch (NCombinator name args body) = (output, stack', dump, heap', globals, steps) where
         -- Bind arguments
         env = bindings ++ globals
         bindings = zip args (getArgs heap stack)
@@ -349,7 +358,11 @@ step state = dispatch (load heap top) where
         -- If expression
         If                  -> primIf state
 
-        -- Abort 
+        -- Printing
+        Print               -> primPrint state
+
+        -- Early exit
+        Halt                -> (output, [], dump, heap, globals, steps)
         Abort               -> error "Execution halted with abort"
 
 -- Convert a unary arithmetic function into a function on nodes
@@ -372,64 +385,79 @@ fromRelational _ _ _ = error "Expected numeric argument(s)"
 -- Either apply unary primitive or set up evaluation of
 -- argument to unary primitive
 primUnary :: (Node -> Node) -> TIState -> TIState
-primUnary f ((_:root:stack), dump, heap, globals, steps) = state' where
+primUnary f (output, (_:root:stack), dump, heap, globals, steps) = state' where
     addr = getArg heap root
     arg = load heap addr
-    state' | isData arg = (root:stack, dump, update heap root (f arg), globals, steps)
-           | otherwise  = (addr:stack, [root]:dump, heap, globals, steps)
+    state' | isNum arg  = (output, root:stack, dump, update heap root (f arg), globals, steps)
+           | isData arg = error "Expected numeric argument to unary operator"
+           | otherwise  = (output, addr:stack, [root]:dump, heap, globals, steps)
 primUnary _ _ = error "Malformed unary primitive expression"
 
 -- Either apply binary primitive or set up evaluation of
 -- arguments to binary primitive
 primBinary :: (Node -> Node -> Node) -> TIState -> TIState
-primBinary f ((_:xRoot:yRoot:stack), dump, heap, globals, steps) = state' where
+primBinary f (output, (_:xRoot:yRoot:stack), dump, heap, globals, steps) = state' where
     (xAddr, yAddr) = (getArg heap xRoot, getArg heap yRoot)
     (x, y) = (load heap xAddr, load heap yAddr)
-    state' | isData x && isData y = (yRoot:stack, dump, update heap yRoot (f x y), globals, steps)
-           | isData y             = (xAddr:yRoot:stack, [xRoot]:dump, heap, globals, steps)
-           | otherwise            = (yAddr:stack,       [yRoot]:dump, heap, globals, steps)
+    state' | isNum x && isNum y        = (output, yRoot:stack, dump, update heap yRoot (f x y), globals, steps)
+           | isNum y && not (isData x) = (output, xAddr:yRoot:stack, [xRoot]:dump, heap, globals, steps)
+           | isData y || isData x      = error "Expected numeric arguments to binary operator"
+           | otherwise                 = (output, yAddr:stack,       [yRoot]:dump, heap, globals, steps)
 primBinary _ _ = error "Malformed binary primitive expression"
+
+-- If condition is evaluated, use it to choose the correct branch.
+-- Otherwise, put application on dump and evaluate condition.
+primIf (output, (_:c:x:y:stack), dump, heap, globals, steps) = state' where
+    (cAddr, xAddr, yAddr) = (getArg heap c, getArg heap x, getArg heap y)
+    cond = load heap cAddr
+    state' | isTrue cond  = (output, y:stack, dump, update heap y (NPointer xAddr), globals, steps)
+           | isFalse cond = (output, y:stack, dump, update heap y (NPointer yAddr), globals, steps)
+           | isData cond  = error "Expected a Boolean condition for if"
+           | otherwise    = (output, cAddr:x:y:stack, [c]:dump, heap, globals, steps)
+primIf _ = error "Malformed if-expression"
+
+-- If pair is evaluated, apply function to it. Otherwise, put application on
+-- dump and evaluate pair.
+primCasePair (output, (_:p:f:stack), dump, heap, globals, steps) = state' where
+    (pAddr, fAddr) = (getArg heap p, getArg heap f)
+    pair = load heap pAddr
+    (heap', app) = pairApply heap pair fAddr
+    state' | isPair pair = (output, f:stack, dump, update heap' f app, globals, steps)
+           | isData pair = error "Expected a pair as argument to casePair"
+           | otherwise   = (output, pAddr:f:stack, [p]:dump, heap, globals, steps)
+primCasePair _ = error "Malformed casePair-expression"
+
+-- If list is evaluated, check if nil and apply appropriate function to it.
+-- Otherwise, put application on dump and evaluate list.
+primCaseList (output, (_:l:n:c:stack), dump, heap, globals, steps) = state' where
+    (lAddr, nAddr, cAddr) = (getArg heap l, getArg heap n, getArg heap c)
+    list = load heap lAddr
+    (heap', app) = listApply heap list nAddr cAddr
+    state' | isList list = (output, c:stack, dump, update heap' c app, globals, steps)
+           | isData list = error "Expected a list as argument to caseList"
+           | otherwise   = (output, lAddr:n:c:stack, [l]:dump, heap, globals, steps)
+primCaseList _ = error "Malformed caseList-expression"
+
+-- If argument is evaluated, put it on the output stack.
+-- Otherwise, put application on dump and evaluate argument.
+primPrint (output, (_:v:n:stack), dump, heap, globals, steps) = state' where
+    (vAddr, nAddr) = (getArg heap v, getArg heap n)
+    value = load heap vAddr
+    state' | isNum value  = (value:output, nAddr:stack, dump, heap, globals, steps)
+           | isData value = error "Expected a numeric argument to print"
+           | otherwise    = (output, vAddr:n:stack, [v]:dump, heap, globals, steps)
+primPrint _ = error "Malformed print-expression"
 
 -- Generate a new data node
 primConstruct :: Int -> Int -> TIState -> TIState
-primConstruct tag arity state = (stack', dump, heap', globals, steps) where
-    (stack, dump, heap, globals, steps) = state
+primConstruct tag arity state = (output, stack', dump, heap', globals, steps) where
+    (output, stack, dump, heap, globals, steps) = state
     expect = arity + 1
     root = stack !! (expect - 1)
     args = take arity $ getArgs heap stack
     heap' = update heap root (NData tag args)
     stack' | expect > length stack = error ("Not enough arguments for constructor")
            | otherwise             = root:drop expect stack
-
--- If condition is evaluated, use it to choose the correct branch.
--- Otherwise, put application on dump and evaluate condition.
-primIf ((_:c:x:y:stack), dump, heap, globals, steps) = state' where
-    (cAddr, xAddr, yAddr) = (getArg heap c, getArg heap x, getArg heap y)
-    cond = load heap cAddr
-    state' | isData cond && isTrue cond  = (y:stack, dump, update heap y (NPointer xAddr), globals, steps)
-           | isData cond && isFalse cond = (y:stack, dump, update heap y (NPointer yAddr), globals, steps)
-           | otherwise                   = (cAddr:x:y:stack, [c]:dump, heap, globals, steps)
-primIf _ = error "Malformed if-expression"
-
--- If pair is evaluated, apply function to it. Otherwise, put application on
--- dump and evaluate pair.
-primCasePair ((_:p:f:stack), dump, heap, globals, steps) = state' where
-    (pAddr, fAddr) = (getArg heap p, getArg heap f)
-    pair = load heap pAddr
-    (heap', app) = pairApply heap pair fAddr
-    state' | isData pair && isPair pair = (f:stack, dump, update heap' f app, globals, steps)
-           | otherwise                  = (pAddr:f:stack, [p]:dump, heap, globals, steps)
-primCasePair _ = error "Malformed casePair-expression"
-
--- If list is evaluated, check if nil and apply appropriate function to it.
--- Otherwise, put application on dump and evaluate list.
-primCaseList ((_:l:n:c:stack), dump, heap, globals, steps) = state' where
-    (lAddr, nAddr, cAddr) = (getArg heap l, getArg heap n, getArg heap c)
-    list = load heap lAddr
-    (heap', app) = listApply heap list nAddr cAddr
-    state' | isData list && isList list = (c:stack, dump, update heap' c app, globals, steps)
-           | otherwise                  = (lAddr:n:c:stack, [l]:dump, heap, globals, steps)
-primCaseList _ = error "Malformed caseList-expression"
 
 -- Load arguments from heap
 getArgs :: Heap Node -> Stack -> [Addr]
@@ -514,16 +542,21 @@ addBindings bindings heap env = foldr addBinding (heap, []) bindings where
         let (heap'', addr) = instantiate heap' env expr
         in (heap'', (name, addr):env')
 
--- Parse, compile, and reduce program.
-run :: Volume -> String -> String
-run Verbose = show . formatStates . eval . compile . parseCore
-run Silent = show . formatLast . eval . compile . parseCore
+-- Parse, compile, reduce program, and print states
+debug :: String -> String
+debug = show . format . eval . compile . parseCore where
+    format states = formatStates states $$ formatOutput states
 
--- Format final result of computation
-formatLast :: [TIState] -> Doc
-formatLast states = formatNode node where
-    (stack, _, heap, _, _) = last states
-    node = load heap $ head stack
+-- Parse, compile, reduce program, and print output
+run :: String -> String
+run = show . formatOutput . eval . compile . parseCore
+
+-- Format elements of output stack
+formatOutput :: [TIState] -> Doc
+formatOutput states = vcat $ map formatInteger $ reverse output where
+    (output, _, _, _, _, _) = last states
+    formatInteger (NNum n)  = int n
+    formatInteger node      = error $ "Attempted to print " ++ (show $ formatNode node)
 
 -- Format all computation states
 formatStates :: [TIState] -> Doc
@@ -531,7 +564,7 @@ formatStates = vcat . map formatState . zip [1..]
 
 -- Format a single computation state 
 formatState :: (Int, TIState) -> Doc
-formatState (num, (stack, _, heap, _, _)) = text "State" <+> int num <> colon $$ (nest 4 $ formatStack heap stack $$ formatHeap heap stack)
+formatState (num, (output, stack, _, heap, _, _)) = text "State" <+> int num <> colon $$ (nest 4 $ formatStack heap stack $$ formatHeap heap stack)
 
 -- Format the stack as a tree of applications
 formatStack :: Heap Node -> Stack -> Doc
@@ -541,6 +574,7 @@ formatStack heap (x:xs) = text "Stack" <> colon $$ nest 4 (foldr draw (formatHea
     formatValue addr = case load heap addr of
         NApp a1 a2 -> formatHeapNode heap a2
         node       -> formatAddr addr <> colon <+> formatNode node
+formatStack heap [] = text "Stack: empty"
 
 -- Format the heap as number of allocations
 formatHeap :: Heap Node -> Stack -> Doc
