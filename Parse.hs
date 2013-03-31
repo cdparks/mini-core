@@ -17,7 +17,7 @@ languageDef =
              , Token.commentEnd      = "-}"
              , Token.commentLine     = "--"
              , Token.identStart      = letter
-             , Token.identLetter     = alphaNum <|> char '_'
+             , Token.identLetter     = alphaNum <|> char '_' <|> char '\''
              , Token.reservedNames   = [ "let"
                                        , "letrec"
                                        , "case"
