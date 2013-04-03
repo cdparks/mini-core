@@ -310,7 +310,7 @@ step state = dispatch (load heap top) where
     -- Unwind spine onto stack, removing indirections from the
     -- argument if present.
     dispatch (NApp a1 a2) = case load heap a2 of
-        NPointer a3 -> (output, a1:stack, dump, update heap top (NApp a1 a3), globals, steps)
+        NPointer a3 -> (output, a1:stack, dump, replace heap top (NApp a1 a3), globals, steps)
         _           -> (output, a1:stack, dump, heap, globals, steps)
 
     -- Dereference pointer and replace with value on stack
@@ -388,7 +388,7 @@ primUnary :: (Node -> Node) -> TIState -> TIState
 primUnary f (output, (_:root:stack), dump, heap, globals, steps) = state' where
     addr = getArg heap root
     arg = load heap addr
-    state' | isNum arg  = (output, root:stack, dump, update heap root (f arg), globals, steps)
+    state' | isNum arg  = (output, root:stack, dump, replace heap root (f arg), globals, steps)
            | isData arg = error "Expected numeric argument to unary operator"
            | otherwise  = (output, addr:stack, [root]:dump, heap, globals, steps)
 primUnary _ _ = error "Malformed unary primitive expression"
@@ -399,7 +399,7 @@ primBinary :: (Node -> Node -> Node) -> TIState -> TIState
 primBinary f (output, (_:xRoot:yRoot:stack), dump, heap, globals, steps) = state' where
     (xAddr, yAddr) = (getArg heap xRoot, getArg heap yRoot)
     (x, y) = (load heap xAddr, load heap yAddr)
-    state' | isNum x && isNum y        = (output, yRoot:stack, dump, update heap yRoot (f x y), globals, steps)
+    state' | isNum x && isNum y        = (output, yRoot:stack, dump, replace heap yRoot (f x y), globals, steps)
            | isNum y && not (isData x) = (output, xAddr:yRoot:stack, [xRoot]:dump, heap, globals, steps)
            | isData y || isData x      = error "Expected numeric arguments to binary operator"
            | otherwise                 = (output, yAddr:stack,       [yRoot]:dump, heap, globals, steps)
@@ -410,8 +410,8 @@ primBinary _ _ = error "Malformed binary primitive expression"
 primIf (output, (_:c:x:y:stack), dump, heap, globals, steps) = state' where
     (cAddr, xAddr, yAddr) = (getArg heap c, getArg heap x, getArg heap y)
     cond = load heap cAddr
-    state' | isTrue cond  = (output, y:stack, dump, update heap y (NPointer xAddr), globals, steps)
-           | isFalse cond = (output, y:stack, dump, update heap y (NPointer yAddr), globals, steps)
+    state' | isTrue cond  = (output, y:stack, dump, replace heap y (NPointer xAddr), globals, steps)
+           | isFalse cond = (output, y:stack, dump, replace heap y (NPointer yAddr), globals, steps)
            | isData cond  = error "Expected a Boolean condition for if"
            | otherwise    = (output, cAddr:x:y:stack, [c]:dump, heap, globals, steps)
 primIf _ = error "Malformed if-expression"
@@ -422,7 +422,7 @@ primCasePair (output, (_:p:f:stack), dump, heap, globals, steps) = state' where
     (pAddr, fAddr) = (getArg heap p, getArg heap f)
     pair = load heap pAddr
     (heap', app) = pairApply heap pair fAddr
-    state' | isPair pair = (output, f:stack, dump, update heap' f app, globals, steps)
+    state' | isPair pair = (output, f:stack, dump, replace heap' f app, globals, steps)
            | isData pair = error "Expected a pair as argument to casePair"
            | otherwise   = (output, pAddr:f:stack, [p]:dump, heap, globals, steps)
 primCasePair _ = error "Malformed casePair-expression"
@@ -433,7 +433,7 @@ primCaseList (output, (_:l:n:c:stack), dump, heap, globals, steps) = state' wher
     (lAddr, nAddr, cAddr) = (getArg heap l, getArg heap n, getArg heap c)
     list = load heap lAddr
     (heap', app) = listApply heap list nAddr cAddr
-    state' | isList list = (output, c:stack, dump, update heap' c app, globals, steps)
+    state' | isList list = (output, c:stack, dump, replace heap' c app, globals, steps)
            | isData list = error "Expected a list as argument to caseList"
            | otherwise   = (output, lAddr:n:c:stack, [l]:dump, heap, globals, steps)
 primCaseList _ = error "Malformed caseList-expression"
@@ -455,7 +455,7 @@ primConstruct tag arity state = (output, stack', dump, heap', globals, steps) wh
     expect = arity + 1
     root = stack !! (expect - 1)
     args = take arity $ getArgs heap stack
-    heap' = update heap root (NData tag args)
+    heap' = replace heap root (NData tag args)
     stack' | expect > length stack = error ("Not enough arguments for constructor")
            | otherwise             = root:drop expect stack
 
@@ -469,23 +469,23 @@ getArg heap addr = case load heap addr of
     (NApp fun arg) -> arg
     _              -> error "Missing argument"
 
--- Create heap node from expression and update redex root address 
+-- Create heap node from expression and replace redex root address 
 -- to point to result
 instantiateAndUpdate :: Heap Node -> [(Name, Addr)] -> Expr -> Addr -> Heap Node
 instantiateAndUpdate heap env expr addr = build expr where
     -- Build number on heap
-    build (Num n) = update heap addr (NNum n)
+    build (Num n) = replace heap addr (NNum n)
 
     -- Look up variable in environment
     build (Var v) = case lookup v env of
-        Just value -> update heap addr (NPointer value)
+        Just value -> replace heap addr (NPointer value)
         Nothing    -> error ("Undefined name " ++ v)
 
     -- Instantiate function and argument and build application
     build (App e1 e2) =
         let (heap',  a1) = instantiate heap  env e1
             (heap'', a2) = instantiate heap' env e2
-        in update heap'' addr (NApp a1 a2)
+        in replace heap'' addr (NApp a1 a2)
 
     -- Instantiate each expression, add each binding to environment, and then
     -- instantiate body
@@ -495,10 +495,10 @@ instantiateAndUpdate heap env expr addr = build expr where
                    | otherwise = env  -- let, bindings can refer to current environment
             env' = letEnv' ++ env
             (heap'', addr') = instantiate heap' env' body
-        in update heap'' addr (NPointer addr')
+        in replace heap'' addr (NPointer addr')
 
     -- Convert data constructor to node
-    build (Cons tag arity) = update heap addr (NPrim "Pack" (Construct tag arity))
+    build (Cons tag arity) = replace heap addr (NPrim "Pack" (Construct tag arity))
 
     -- Not supported yet
     build (Case _ _) = error "Can't instantiate case expressions yet"

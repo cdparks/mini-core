@@ -15,8 +15,9 @@ data Instruction = Unwind
                  | Pushglobal Name
                  | Pushint Int
                  | Push Int
+                 | Pop Int
+                 | Update Int
                  | Mkap
-                 | Slide Int
                    deriving Show
 
 type GMStack = [Addr]
@@ -26,6 +27,7 @@ type GMHeap = Heap Node
 data Node = NNum Int
           | NApp Addr Addr
           | NGlobal Int GMCode
+          | NPointer Addr
             deriving Show
 
 -- Global environment maps names to addresses
@@ -115,9 +117,10 @@ compileSC (name, env, body) = (name, length env, compileR (zip env [0..]) body)
 -- Compile the expression e in the environment p for a
 -- supercombinator of arity d by generating code which
 -- instantiates e and then unwinds the resulting stack
--- R(e) p d = C(e) p ++ [Slide d + 1, Unwind]
+-- R(e) p d = C(e) p ++ [Update d, Pop d, Unwind]
 compileR :: GMEnvironment -> Expr -> GMCode
-compileR env e = compileC env e ++ [Slide (length env + 1), Unwind]
+compileR env e = compileC env e ++ [Update n, Pop n, Unwind] where
+    n = length env
 
 -- Compile the expression e by generating code which constructs the
 -- graph of e in the environment p leaving a pointer to it on top
@@ -173,7 +176,8 @@ dispatch (Pushglobal f) = pushglobal f
 dispatch (Pushint n)    = pushint n
 dispatch Mkap           = mkap
 dispatch (Push n)       = push n
-dispatch (Slide n)      = slide n
+dispatch (Pop n)        = pop n
+dispatch (Update n)     = update n
 dispatch Unwind         = unwind
 
 -- Find global node by name
@@ -213,13 +217,20 @@ getArg :: Node -> Addr
 getArg (NApp a1 a2) = a2
 getArg _            = error "Attempted to load argument to non-application node"
 
--- Remove information about previous application from stack
--- (Slide n : i, a0 : ... : an : s, h, m)
--- (i,           a0 : s,            h, m)
-slide :: Int -> GMState -> GMState
-slide n state = state { gmStack = stack' } where
-    (x:xs) = gmStack state
-    stack' = x:drop n xs
+-- Replace root of redex with pointer to top-of-stack
+-- (Update n : i, a : a0 : ... : an : s, h,                  m)
+-- (i,            a0 : ... : an : s,     h[(an, NPointer a), m)
+update :: Int -> GMState -> GMState
+update n state = state { gmStack = stack', gmHeap = heap' } where
+    (addr:stack') = gmStack state
+    heap' = replace (gmHeap state) (stack' !! n) $ NPointer addr
+
+-- Pop n items from the stack
+-- (Pop n : i, a1 : ... : an : s, h, m)
+-- (i,         s,                 h, m)
+pop :: Int -> GMState -> GMState
+pop n state =  state { gmStack = stack' } where
+    stack' = drop n $ gmStack state
 
 -- Use top of stack to build next state
 unwind :: GMState -> GMState
@@ -236,6 +247,11 @@ unwind state = newState $ load heap x where
     -- ([Unwind], a : s,      h[(a, NApp a1 a2)], m)
     -- ([Unwind], a1 : a : s, h,                  m)
     newState (NApp a1 a2) = state { gmCode = [Unwind], gmStack = (a1:x:xs) }
+
+    -- Pointer; dereference and replace top-of-stack
+    -- ([Unwind], a0 : s, h[(a0, NPointer a)], m)
+    -- ([Unwind], a : s,  h,                   m)
+    newState (NPointer a) = state { gmCode = [Unwind], gmStack = a:xs }
 
     -- Global; put code for global in code component of machine.
     -- ([Unwind], a0 : ... : an : s, h[(a0, NGlobal n c)], m)
@@ -270,9 +286,14 @@ formatStack state = text "Stack" <> colon $$ nest 4 (vcat $ map (formatNode stat
 
 -- Format a single node
 formatNode :: GMState -> Addr -> Doc
-formatNode state addr = text "#" <> int addr <> colon <+> draw (load (gmHeap state) addr) where
+formatNode state addr = formatAddr addr <> colon <+> draw (load (gmHeap state) addr) where
     draw (NNum n) = int n
     draw (NGlobal n g) = text "Global" <+> text v where
         (v, _) = head (filter (\(x, b) -> b == addr) (gmGlobals state))
-    draw (NApp a1 a2) = text "App" <+> text "#" <> int a1 <+> text "#" <> int a2
+    draw (NApp a1 a2) = text "App" <+> formatAddr a1 <+> formatAddr a2
+    draw (NPointer a) = text "Pointer to" <+> formatAddr a
+
+-- Format an address
+formatAddr :: Addr -> Doc
+formatAddr addr = text "#" <> int addr
 

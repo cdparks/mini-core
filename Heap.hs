@@ -3,7 +3,7 @@ module Heap (
     Addr,
     heapInit,
     alloc,
-    update,
+    replace,
     free,
     load
 ) where
@@ -23,8 +23,8 @@ alloc :: Heap a -> a -> (Heap a, Addr)
 alloc (size, (next:free), env) x = ((size + 1, free, (next, x):env), next)
 
 -- Replace current node at address with new object
-update :: Heap a -> Addr -> a -> Heap a
-update (size, free, env) addr x = (size, free, (addr, x):remove env addr)
+replace :: Heap a -> Addr -> a -> Heap a
+replace (size, free, env) addr x = (size, free, (addr, x):remove env addr)
 
 -- Remove object from live environment, and return address to free-list
 free :: Heap a -> Addr -> Heap a
@@ -54,7 +54,7 @@ isNull = (==nullAddr)
 
 -- Remove object from list by address
 remove :: [(Addr, a)] -> Addr -> [(Addr, a)]
-remove [] addr = error $ "Attempt to update or free nonexistent node " ++ show addr
+remove [] addr = error $ "Attempt to replace free nonexistent node " ++ show addr
 remove (pair@(addr, x):env) addr'
     | addr' == addr = env
     | otherwise     = pair:remove env addr'
