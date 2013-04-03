@@ -4,6 +4,11 @@ import Heap
 import Expr
 import Parse (parseCore)
 
+import Control.Arrow (second)
+import Data.List
+import Text.PrettyPrint
+import Debug.Trace
+
 -- Code is just a list of instructions
 type GMCode = [Instruction]
 data Instruction = Unwind
@@ -26,6 +31,9 @@ data Node = NNum Int
 -- Global environment maps names to addresses
 type GMGlobals = [(Name, Addr)]
 
+-- Current local environment maps names to stack offsets
+type GMEnvironment = [(Name, Int)]
+
 -- Tally information about machine state
 data GMStats = GMStats {
     gmSteps :: Int
@@ -40,12 +48,108 @@ data GMState = GMState {
     gmStats   :: GMStats
 }
 
+-- Simple instance for now
+instance Show GMState where
+    show _ = "GMState#"
+
+-- Extra definititions to add to the initial global environment
+extraDefs = []
+
+-- Compile and run program
+run :: String -> String
+run = show . formatResults . eval . compile . parseCore
+
+-- Parse and compile program and evaluate first state.
+-- Used for interactive debugging in ghci.
+-- example:
+-- ghci> start "main = I 10"
+--   { lots of output }
+-- ghci> next it
+--   { lots of output }
+-- ghci> next it
+--   ...
+start :: String -> IO GMState
+start p = do
+    state <- return (single (compile (parseCore p)))
+    putStrLn $ show $ formatResults [state]
+    return state
+
+-- Transition to next state
+-- Used for interactive debugging in ghci.
+next :: GMState -> IO GMState
+next state = do
+    state' <- return (single state)
+    putStrLn $ show $ formatState (state', 0)
+    return state'
+
+-- Turn program into initial G-Machine state
+compile :: Program -> GMState
+compile program = GMState codeInit [] heap globals statInit where
+    (heap, globals) = buildInitialHeap program
+
+-- Push main and unwind
+codeInit :: GMCode
+codeInit = [Pushglobal "main", Unwind]
+
+-- Start at step zero
+statInit :: GMStats
+statInit = GMStats 0
+
+-- Instantiate supercombinators in heap
+buildInitialHeap :: Program -> (GMHeap, GMGlobals)
+buildInitialHeap program = mapAccumL allocSC heapInit compiled where
+    compiled = map compileSC $ prelude ++ extraDefs ++ program
+
+-- Allocate a supercombinator and return the new heap
+allocSC :: GMHeap -> (Name, Int, GMCode) -> (GMHeap, (Name, Addr))
+allocSC heap (name, arity, instructions) = (heap', (name, addr)) where
+    (heap', addr) = alloc heap (NGlobal arity instructions)
+
+-- Compile supercombinator f with formal parameters x1...xn by
+-- compiling f's body e in the environment created by substituting
+-- the actual parameters for the formal parameters
+-- SC(f x1 ... xn = e) = R(e) [x1 -> 0, ..., xn -> n - 1] n
+compileSC :: (Name, [Name], Expr) -> (Name, Int, GMCode)
+compileSC (name, env, body) = (name, length env, compileR (zip env [0..]) body)
+
+-- Compile the expression e in the environment p for a
+-- supercombinator of arity d by generating code which
+-- instantiates e and then unwinds the resulting stack
+-- R(e) p d = C(e) p ++ [Slide d + 1, Unwind]
+compileR :: GMEnvironment -> Expr -> GMCode
+compileR env e = compileC env e ++ [Slide (length env + 1), Unwind]
+
+-- Compile the expression e by generating code which constructs the
+-- graph of e in the environment p leaving a pointer to it on top
+-- of the stack
+-- C(f)     p = [Pushglobal f]
+-- C(x)     p = [Push (p x)]
+-- C(i)     p = [Pushint i]
+-- C(e1 e2) p = C[e2] p ++ C[e1] p(offset+1) ++ [Mkap]
+compileC :: GMEnvironment -> Expr -> GMCode
+compileC env (Var v) = case lookup v env of
+    Just n  -> [Push n]
+    Nothing -> [Pushglobal v]
+compileC env (Num n) = [Pushint n]
+compileC env (App e1 e2) = compileC env e2 ++ compileC (argOffset 1 env) e1 ++ [Mkap]
+
+-- Adjust the stack offsets in the environment by n
+argOffset :: Int -> GMEnvironment -> GMEnvironment
+argOffset n = map $ second (+n)
+
 -- Move from state to state until final state is reached
 eval :: GMState -> [GMState]
 eval state = state:rest where
     rest | isFinal state = []
          | otherwise     = eval next
     next = doAdmin (step state)
+
+-- Take a single step from on state to the next.
+-- For interactive debugging.
+single :: GMState -> GMState
+single state = state' where
+    state' | isFinal state = state
+           | otherwise     = doAdmin (step state)
 
 -- Update machine statistics
 doAdmin :: GMState -> GMState
@@ -131,7 +235,7 @@ unwind state = newState $ load heap x where
     -- Application; keep unwinding applications onto stack
     -- ([Unwind], a : s,      h[(a, NApp a1 a2)], m)
     -- ([Unwind], a1 : a : s, h,                  m)
-    newState (NApp a1 a2) = state { gmCode = [Unwind], gmStack = (a1:a2:xs) }
+    newState (NApp a1 a2) = state { gmCode = [Unwind], gmStack = (a1:x:xs) }
 
     -- Global; put code for global in code component of machine.
     -- ([Unwind], a0 : ... : an : s, h[(a0, NGlobal n c)], m)
@@ -139,4 +243,36 @@ unwind state = newState $ load heap x where
     newState (NGlobal n code)
         | length xs < n = error "Unwinding with too few arguments"
         | otherwise     = state { gmCode = code }
+
+-- Format output
+formatResults :: [GMState] -> Doc
+formatResults states = text "Definitions" <> colon $$ nest 4 defs $$ text "Transitions" <> colon $$ nest 4 trans where
+    defs = vcat $ map (formatSC state) $ gmGlobals state
+    state:_ = states
+    trans = vcat $ map formatState (zip states [0..])
+
+-- Format a single supercombinator
+formatSC :: GMState -> (Name, Addr) -> Doc
+formatSC state (name, addr) = text name <> colon $$ nest 4 (formatCode code) where
+    (NGlobal _ code) = load (gmHeap state) addr
+
+-- Format list of instructions
+formatCode :: GMCode -> Doc
+formatCode code = text "Code" <> colon $$ nest 4 (vcat $ map (text . show) code)
+
+-- Format stack and current code
+formatState :: (GMState, Int) -> Doc
+formatState (state, n) = text "State" <+> int n <> colon $$ nest 4 (formatStack state $$ formatCode (gmCode state))
+
+-- Format nodes on stack
+formatStack :: GMState -> Doc
+formatStack state = text "Stack" <> colon $$ nest 4 (vcat $ map (formatNode state) (reverse (gmStack state)))
+
+-- Format a single node
+formatNode :: GMState -> Addr -> Doc
+formatNode state addr = text "#" <> int addr <> colon <+> draw (load (gmHeap state) addr) where
+    draw (NNum n) = int n
+    draw (NGlobal n g) = text "Global" <+> text v where
+        (v, _) = head (filter (\(x, b) -> b == addr) (gmGlobals state))
+    draw (NApp a1 a2) = text "App" <+> text "#" <> int a1 <+> text "#" <> int a2
 
