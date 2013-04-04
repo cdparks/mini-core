@@ -99,13 +99,13 @@ statInit = GMStats 0
 
 -- Instantiate supercombinators in heap
 buildInitialHeap :: Program -> (GMHeap, GMGlobals)
-buildInitialHeap program = mapAccumL allocSC heapInit compiled where
+buildInitialHeap program = mapAccumL allocSC hInit compiled where
     compiled = map compileSC $ prelude ++ extraDefs ++ program
 
 -- Allocate a supercombinator and return the new heap
 allocSC :: GMHeap -> (Name, Int, GMCode) -> (GMHeap, (Name, Addr))
 allocSC heap (name, arity, instructions) = (heap', (name, addr)) where
-    (heap', addr) = alloc heap (NGlobal arity instructions)
+    (heap', addr) = hAlloc heap (NGlobal arity instructions)
 
 -- Compile supercombinator f with formal parameters x1...xn by
 -- compiling f's body e in the environment created by substituting
@@ -194,14 +194,14 @@ pushglobal f state = state { gmStack = addr:gmStack state } where
 -- (i,             a : s, h[(a, NNum n)], m)
 pushint :: Int -> GMState -> GMState
 pushint n state = state { gmStack = addr:gmStack state, gmHeap = heap' } where
-    (heap', addr) = alloc (gmHeap state) $ NNum n
+    (heap', addr) = hAlloc (gmHeap state) $ NNum n
 
 -- Build application from 2 addresses on top of stack
 -- (Mkap : i, a1 : a2 : s, h,                  m)
 -- (i,        a : s,       h[(a, NApp a1 a2)], m)
 mkap :: GMState -> GMState
 mkap state = state { gmStack = addr:stack', gmHeap = heap' } where
-    (heap', addr) = alloc (gmHeap state) $ NApp a1 a2
+    (heap', addr) = hAlloc (gmHeap state) $ NApp a1 a2
     (a1:a2:stack') = gmStack state
 
 -- Push address of argument on stack
@@ -211,12 +211,11 @@ push :: Int -> GMState -> GMState
 push n state = state { gmStack = addr:stack } where
     stack = gmStack state
     addr  = stack !! n
-    --addr  = getArg $ load (gmHeap state) $ stack !! (n + 1)
 
 -- Pull n arguments directly onto the stack out of NApp nodes
 rearrange :: Int -> GMHeap -> GMStack -> GMStack
 rearrange n heap stack = take n stack' ++ drop n stack where
-    stack' = map (getArg . load heap) $ tail stack
+    stack' = map (getArg . hLoad heap) $ tail stack
 
 -- Get argument component from application
 getArg :: Node -> Addr
@@ -229,7 +228,7 @@ getArg _            = error "Attempted to load argument to non-application node"
 update :: Int -> GMState -> GMState
 update n state = state { gmStack = stack', gmHeap = heap' } where
     (addr:stack') = gmStack state
-    heap' = replace (gmHeap state) (stack' !! n) $ NPointer addr
+    heap' = hUpdate (gmHeap state) (stack' !! n) $ NPointer addr
 
 -- Pop n items from the stack
 -- (Pop n : i, a1 : ... : an : s, h, m)
@@ -240,7 +239,7 @@ pop n state =  state { gmStack = stack' } where
 
 -- Use top of stack to build next state
 unwind :: GMState -> GMState
-unwind state = newState $ load heap x where
+unwind state = newState $ hLoad heap x where
     (x:xs) = gmStack state
     heap = gmHeap state
 
@@ -276,7 +275,7 @@ formatResults states = text "Definitions" <> colon $$ nest 4 defs $$ text "Trans
 -- Format a single supercombinator
 formatSC :: GMState -> (Name, Addr) -> Doc
 formatSC state (name, addr) = text name <> colon $$ nest 4 (formatCode code) where
-    (NGlobal _ code) = load (gmHeap state) addr
+    (NGlobal _ code) = hLoad (gmHeap state) addr
 
 -- Format list of instructions
 formatCode :: GMCode -> Doc
@@ -292,7 +291,7 @@ formatStack state = text "Stack" <> colon $$ nest 4 (vcat $ map (formatNode stat
 
 -- Format a single node
 formatNode :: GMState -> Addr -> Doc
-formatNode state addr = formatAddr addr <> colon <+> draw (load (gmHeap state) addr) where
+formatNode state addr = formatAddr addr <> colon <+> draw (hLoad (gmHeap state) addr) where
     draw (NNum n) = int n
     draw (NGlobal n g) = text "Global" <+> text v where
         (v, _) = head (filter (\(x, b) -> b == addr) (gmGlobals state))
