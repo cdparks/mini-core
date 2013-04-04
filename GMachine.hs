@@ -11,13 +11,15 @@ import Debug.Trace
 
 -- Code is just a list of instructions
 type GMCode = [Instruction]
-data Instruction = Unwind
-                 | Pushglobal Name
-                 | Pushint Int
-                 | Push Int
-                 | Pop Int
-                 | Update Int
-                 | Mkap
+data Instruction = Pushglobal Name      -- Push address of global on stack
+                 | Pushint Int          -- Push address of integer on stack
+                 | Push Int             -- Push address of local variable on stack
+                 | Pop Int              -- Pop n items from stack
+                 | Slide Int            -- Pop n items from stack leaving top-of-stack
+                 | Alloc Int            -- Allocate n pointers and put addresses on stack
+                 | Mkap                 -- Make application node out of top two address
+                 | Update Int           -- Replace root of redex with pointer to value
+                 | Unwind               -- Unwind application nodes onto stack
                    deriving Show
 
 type GMStack = [Addr]
@@ -178,6 +180,8 @@ dispatch Mkap           = mkap
 dispatch (Push n)       = push n
 dispatch (Pop n)        = pop n
 dispatch (Update n)     = update n
+dispatch (Alloc n)      = alloc n
+dispatch (Slide n)      = slide n
 dispatch Unwind         = unwind
 
 -- Find global node by name
@@ -196,14 +200,6 @@ pushint :: Int -> GMState -> GMState
 pushint n state = state { gmStack = addr:gmStack state, gmHeap = heap' } where
     (heap', addr) = hAlloc (gmHeap state) $ NNum n
 
--- Build application from 2 addresses on top of stack
--- (Mkap : i, a1 : a2 : s, h,                  m)
--- (i,        a : s,       h[(a, NApp a1 a2)], m)
-mkap :: GMState -> GMState
-mkap state = state { gmStack = addr:stack', gmHeap = heap' } where
-    (heap', addr) = hAlloc (gmHeap state) $ NApp a1 a2
-    (a1:a2:stack') = gmStack state
-
 -- Push address of argument on stack
 -- (Push n : i, a0 : ... : an+1 : s,         h[(an + 1, NApp an an')], m)
 -- (i,          an' : a0 : ... : an + 1 : s, h,                        m)
@@ -212,15 +208,44 @@ push n state = state { gmStack = addr:stack } where
     stack = gmStack state
     addr  = stack !! n
 
--- Pull n arguments directly onto the stack out of NApp nodes
-rearrange :: Int -> GMHeap -> GMStack -> GMStack
-rearrange n heap stack = take n stack' ++ drop n stack where
-    stack' = map (getArg . hLoad heap) $ tail stack
+-- Pop n items from the stack
+-- (Pop n : i, a1 : ... : an : s, h, m)
+-- (i,         s,                 h, m)
+pop :: Int -> GMState -> GMState
+pop n state =  state { gmStack = stack' } where
+    stack' = drop n $ gmStack state
 
--- Get argument component from application
-getArg :: Node -> Addr
-getArg (NApp a1 a2) = a2
-getArg _            = error "Attempted to load argument to non-application node"
+--- Remove items from stack leaving top-of-stack
+--- (Slide n : i, a0 : ... : an : s, h, m)
+--- (i,           a0 : s,            h, m)
+slide :: Int -> GMState -> GMState
+slide n state = state { gmStack = stack' } where
+    (x:xs) = gmStack state
+    stack' = x:drop n xs
+
+-- Allocate n nodes in the heap and put their addresses on the stack
+-- (Alloc n : i, s,                 h,                                                  m)
+-- (i,           a1 : ... : an : s, h[(a1, NPointer hNull), ..., (an, NPointer hNull)], m)
+alloc :: Int -> GMState -> GMState
+alloc n state = state { gmStack = stack', gmHeap = heap' } where
+    (heap', addrs) = allocNodes n $ gmHeap state
+    stack' = addrs ++ gmStack state
+
+-- Allocate n nodes in the heap. Return new heap and list of addresses.
+allocNodes :: Int -> GMHeap -> (GMHeap, [Addr])
+allocNodes n heap
+    | n < 1     = (heap, [])
+    | otherwise = (heap', addr:addrs) where
+        (heap', addrs) = allocNodes n heap
+        (heap'', addr) = hAlloc heap' (NPointer hNull)
+
+-- Build application from 2 addresses on top of stack
+-- (Mkap : i, a1 : a2 : s, h,                  m)
+-- (i,        a : s,       h[(a, NApp a1 a2)], m)
+mkap :: GMState -> GMState
+mkap state = state { gmStack = addr:stack', gmHeap = heap' } where
+    (heap', addr) = hAlloc (gmHeap state) $ NApp a1 a2
+    (a1:a2:stack') = gmStack state
 
 -- Replace root of redex with pointer to top-of-stack
 -- (Update n : i, a : a0 : ... : an : s, h,                  m)
@@ -229,13 +254,6 @@ update :: Int -> GMState -> GMState
 update n state = state { gmStack = stack', gmHeap = heap' } where
     (addr:stack') = gmStack state
     heap' = hUpdate (gmHeap state) (stack' !! n) $ NPointer addr
-
--- Pop n items from the stack
--- (Pop n : i, a1 : ... : an : s, h, m)
--- (i,         s,                 h, m)
-pop :: Int -> GMState -> GMState
-pop n state =  state { gmStack = stack' } where
-    stack' = drop n $ gmStack state
 
 -- Use top of stack to build next state
 unwind :: GMState -> GMState
@@ -264,6 +282,16 @@ unwind state = newState $ hLoad heap x where
     newState (NGlobal n code)
         | length xs < n = error "Unwinding with too few arguments"
         | otherwise     = state { gmCode = code, gmStack = rearrange n heap (x:xs) }
+
+-- Pull n arguments directly onto the stack out of NApp nodes
+rearrange :: Int -> GMHeap -> GMStack -> GMStack
+rearrange n heap stack = take n stack' ++ drop n stack where
+    stack' = map (getArg . hLoad heap) $ tail stack
+
+-- Get argument component from application
+getArg :: Node -> Addr
+getArg (NApp a1 a2) = a2
+getArg _            = error "Attempted to load argument to non-application node"
 
 -- Format output
 formatResults :: [GMState] -> Doc
