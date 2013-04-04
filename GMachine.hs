@@ -210,7 +210,13 @@ mkap state = state { gmStack = addr:stack', gmHeap = heap' } where
 push :: Int -> GMState -> GMState
 push n state = state { gmStack = addr:stack } where
     stack = gmStack state
-    addr  = getArg $ load (gmHeap state) $ stack !! (n + 1)
+    addr  = stack !! n
+    --addr  = getArg $ load (gmHeap state) $ stack !! (n + 1)
+
+-- Pull n arguments directly onto the stack out of NApp nodes
+rearrange :: Int -> GMHeap -> GMStack -> GMStack
+rearrange n heap stack = take n stack' ++ drop n stack where
+    stack' = map (getArg . load heap) $ tail stack
 
 -- Get argument component from application
 getArg :: Node -> Addr
@@ -254,11 +260,11 @@ unwind state = newState $ load heap x where
     newState (NPointer a) = state { gmCode = [Unwind], gmStack = a:xs }
 
     -- Global; put code for global in code component of machine.
-    -- ([Unwind], a0 : ... : an : s, h[(a0, NGlobal n c)], m)
-    -- (c,        a0 : ... : an : s, h,                    m)
+    -- ([Unwind], a0 : ... : an : s,   h[(a0, NGlobal n c), (NApp a0 a1'), ..., (NApp an-1, an')], m)
+    -- (c,        a1' : ... : an' : s, h,                                                          m)
     newState (NGlobal n code)
         | length xs < n = error "Unwinding with too few arguments"
-        | otherwise     = state { gmCode = code }
+        | otherwise     = state { gmCode = code, gmStack = rearrange n heap (x:xs) }
 
 -- Format output
 formatResults :: [GMState] -> Doc
