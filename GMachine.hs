@@ -137,6 +137,28 @@ compileC env (Var v) = case lookup v env of
     Nothing -> [Pushglobal v]
 compileC env (Num n) = [Pushint n]
 compileC env (App e1 e2) = compileC env e2 ++ compileC (argOffset 1 env) e1 ++ [Mkap]
+compileC env (Let recursive defs body)
+    | recursive = compileLetrec env defs body
+    | otherwise = compileLet    env defs body
+
+-- Letrec is undefined for now
+compileLetrec = undefined
+
+-- Generate code to construct each let binding and the let body.
+-- Code must remove bindings after body is evaluated.
+compileLet :: GMEnvironment -> [(Name, Expr)] -> Expr -> GMCode
+compileLet env defs body = compileDefs env defs ++ compileC env' body ++ [Slide (length defs)] where
+    env' = compileArgs env defs
+
+-- Generate code to construct each definition in defs
+compileDefs :: GMEnvironment -> [(Name, Expr)] -> GMCode
+compileDefs env []                  = []
+compileDefs env ((name, expr):defs) = compileC env expr ++ compileDefs (argOffset 1 env) defs
+
+-- Generate stack offsets for local bindings
+compileArgs :: GMEnvironment -> [(Name, Expr)] -> GMEnvironment
+compileArgs env defs = zip (map fst defs) (reverse [0..n-1]) ++ argOffset n env where
+    n = length defs
 
 -- Adjust the stack offsets in the environment by n
 argOffset :: Int -> GMEnvironment -> GMEnvironment
