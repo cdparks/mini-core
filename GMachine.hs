@@ -141,9 +141,6 @@ compileC env (Let recursive defs body)
     | recursive = compileLetrec env defs body
     | otherwise = compileLet    env defs body
 
--- Letrec is undefined for now
-compileLetrec = undefined
-
 -- Generate code to construct each let binding and the let body.
 -- Code must remove bindings after body is evaluated.
 compileLet :: GMEnvironment -> [(Name, Expr)] -> Expr -> GMCode
@@ -154,6 +151,20 @@ compileLet env defs body = compileDefs env defs ++ compileC env' body ++ [Slide 
 compileDefs :: GMEnvironment -> [(Name, Expr)] -> GMCode
 compileDefs env []                  = []
 compileDefs env ((name, expr):defs) = compileC env expr ++ compileDefs (argOffset 1 env) defs
+
+-- Generate code to construct recursive let bindings and the let body.
+-- Code must remove bindings after body is evaluated.
+-- Bindings start as null pointers and must update themselves on evaluation.
+compileLetrec :: GMEnvironment -> [(Name, Expr)] -> Expr -> GMCode
+compileLetrec env defs body = [Alloc n] ++ compileRecDefs (n - 1) env' defs ++ compileC env' body ++ [Slide n] where
+    env' = compileArgs env defs
+    n = length defs
+
+-- Generate code to construct each definition in defs and
+-- update pointer on stack.
+compileRecDefs :: Int -> GMEnvironment -> [(Name, Expr)] -> GMCode
+compileRecDefs n env []                  = []
+compileRecDefs n env ((name, expr):defs) = compileC env expr ++ [Update n] ++ compileRecDefs (n - 1) (argOffset 1 env) defs
 
 -- Generate stack offsets for local bindings
 compileArgs :: GMEnvironment -> [(Name, Expr)] -> GMEnvironment
@@ -257,8 +268,8 @@ alloc n state = state { gmStack = stack', gmHeap = heap' } where
 allocNodes :: Int -> GMHeap -> (GMHeap, [Addr])
 allocNodes n heap
     | n < 1     = (heap, [])
-    | otherwise = (heap', addr:addrs) where
-        (heap', addrs) = allocNodes n heap
+    | otherwise = (heap'', addr:addrs) where
+        (heap', addrs) = allocNodes (n - 1) heap
         (heap'', addr) = hAlloc heap' (NPointer hNull)
 
 -- Build application from 2 addresses on top of stack
