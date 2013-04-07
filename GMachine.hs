@@ -77,6 +77,9 @@ data GMState = GMState {
 instance Show GMState where
     show _ = "GMState#"
 
+-- Used for the different compilations schemes
+type GMCompiler = GMEnvironment -> Expr -> GMCode
+
 -- Extra definititions to add to the initial global environment
 extraDefs = []
 
@@ -136,6 +139,15 @@ prims =
      (">=", 2, [Push 1, Eval, Push 1, Eval, Ge, Update 2, Pop 2, Unwind]),
      ("if", 3, [Push 0, Eval, Cond [Push 1] [Push 2], Update 3, Pop 3, Unwind])]
 
+binaryOps :: [(Name, Instruction)]
+binaryOps =
+    [("+", Add), ("-", Sub), ("*", Mul), ("/", Div),
+     ("==", Eq), ("/=", Ne), (">=", Ge),
+     (">",  Gt), ("<=", Le), ("<", Lt)]
+
+unaryOps :: [(Name, Instruction)]
+unaryOps = [("negate", Neg)]
+
 -- Instantiate supercombinators in heap
 buildInitialHeap :: Program -> (GMHeap, GMGlobals)
 buildInitialHeap program = mapAccumL allocSC hInit compiled where
@@ -157,31 +169,45 @@ compileSC (name, env, body) = (name, length env, compileR (zip env [0..]) body)
 -- supercombinator of arity d by generating code which
 -- instantiates e and then unwinds the resulting stack
 -- R(e) p d = C(e) p ++ [Update d, Pop d, Unwind]
-compileR :: GMEnvironment -> Expr -> GMCode
-compileR env e = compileC env e ++ [Update n, Pop n, Unwind] where
+compileR :: GMCompiler
+compileR env e = compileE env e ++ [Update n, Pop n, Unwind] where
     n = length env
 
--- Compile the expression e by generating code which constructs the
--- graph of e in the environment p leaving a pointer to it on top
--- of the stack
--- C(f)     p = [Pushglobal f]
--- C(x)     p = [Push (p x)]
--- C(i)     p = [Pushint i]
--- C(e1 e2) p = C[e2] p ++ C[e1] p(offset+1) ++ [Mkap]
-compileC :: GMEnvironment -> Expr -> GMCode
+-- Compile the expression e in a lazy contxt. Generated code will
+-- construct the graph of e in the environment p leaving a pointer
+-- to it on top of the stack
+compileE :: GMCompiler
+compileE env (Num n) = [Pushint n]
+compileE env (Let recursive defs body)
+    | recursive = compileLetrec compileE env defs body
+    | otherwise = compileLet    compileE env defs body
+compileE env e@(App (Var op) e1) = case lookup op unaryOps of
+    Just instruction -> compileE env e1 ++ [instruction]
+    Nothing          -> compileC env e ++ [Eval]
+compileE env e@(App (App (Var op) e1) e2) = case lookup op binaryOps of
+    Just instruction -> compileE env e2 ++ compileE (argOffset 1 env) e1 ++ [instruction]
+    Nothing          -> compileC env e ++ [Eval]
+compileE env (App (App (App (Var "if") e1) e2) e3) =
+    compileE env e1 ++ [Cond (compileE env e2) (compileE env e3)]
+compileE env x = compileC env x ++ [Eval]
+
+-- Compile the expression e in a strict context. Generated code will
+-- construct the graph of e in the environment p leaving a pointer
+-- to it on top of the stack
+compileC :: GMCompiler
 compileC env (Var v) = case lookup v env of
     Just n  -> [Push n]
     Nothing -> [Pushglobal v]
 compileC env (Num n) = [Pushint n]
 compileC env (App e1 e2) = compileC env e2 ++ compileC (argOffset 1 env) e1 ++ [Mkap]
 compileC env (Let recursive defs body)
-    | recursive = compileLetrec env defs body
-    | otherwise = compileLet    env defs body
+    | recursive = compileLetrec compileC env defs body
+    | otherwise = compileLet    compileC env defs body
 
 -- Generate code to construct each let binding and the let body.
 -- Code must remove bindings after body is evaluated.
-compileLet :: GMEnvironment -> [(Name, Expr)] -> Expr -> GMCode
-compileLet env defs body = compileDefs env defs ++ compileC env' body ++ [Slide (length defs)] where
+compileLet :: GMCompiler -> GMEnvironment -> [(Name, Expr)] -> Expr -> GMCode
+compileLet comp env defs body = compileDefs env defs ++ comp env' body ++ [Slide (length defs)] where
     env' = compileArgs env defs
 
 -- Generate code to construct each definition in defs
@@ -192,8 +218,8 @@ compileDefs env ((name, expr):defs) = compileC env expr ++ compileDefs (argOffse
 -- Generate code to construct recursive let bindings and the let body.
 -- Code must remove bindings after body is evaluated.
 -- Bindings start as null pointers and must update themselves on evaluation.
-compileLetrec :: GMEnvironment -> [(Name, Expr)] -> Expr -> GMCode
-compileLetrec env defs body = [Alloc n] ++ compileRecDefs (n - 1) env' defs ++ compileC env' body ++ [Slide n] where
+compileLetrec :: GMCompiler -> GMEnvironment -> [(Name, Expr)] -> Expr -> GMCode
+compileLetrec comp env defs body = [Alloc n] ++ compileRecDefs (n - 1) env' defs ++ comp env' body ++ [Slide n] where
     env' = compileArgs env defs
     n = length defs
 
@@ -392,9 +418,15 @@ unwind state = newState $ hLoad heap x where
     -- Global; put code for global in code component of machine.
     -- ([Unwind], a0 : ... : an : s,   d, h[(a0, NGlobal n c), (NApp a0 a1'), ..., (NApp an-1, an')], m)
     -- (c,        a1' : ... : an' : s, d, h,                                                          m)
-    newState (NGlobal n code)
-        | length xs < n = error "Unwinding with too few arguments"
-        | otherwise     = state { gmCode = code, gmStack = rearrange n heap (x:xs) }
+    -- If we're evaluating something to WHNF, there will be information on the
+    -- dump. In this case, we don't need to fully apply the combinator, and if we
+    -- can't, we should just return the root of the redex:
+    -- ([Unwind], [a0, ..., ak], (i, s) : d, h[(a0, NGlobal n c)], m)
+    -- (i,        ak : s,                 d, h,                    m) when k < n
+    newState (NGlobal n code) = case (dump, length xs < n) of
+        ((code', stack'):dump', True) -> state { gmCode = code', gmStack = last (x:xs):stack' }
+        (_, False)                    -> state { gmCode = code,  gmStack = rearrange n heap (x:xs) }
+        (_, True)                     -> error "Unwinding with too few arguments"
 
 -- Pull n arguments directly onto the stack out of NApp nodes
 rearrange :: Int -> GMHeap -> GMStack -> GMStack
