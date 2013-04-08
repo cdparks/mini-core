@@ -9,30 +9,38 @@ import Data.List
 import Text.PrettyPrint
 import Debug.Trace
 
+-- Output is just a list of characters
+type GMOutput = [Char]
+
 -- Code is just a list of instructions
 type GMCode = [Instruction]
-data Instruction = Pushglobal Name      -- Push address of global on stack
-                 | Pushint Int          -- Push address of integer on stack
-                 | Push Int             -- Push address of local variable on stack
-                 | Pop Int              -- Pop n items from stack
-                 | Slide Int            -- Pop n items from stack leaving top-of-stack
-                 | Alloc Int            -- Allocate n pointers and put addresses on stack
-                 | Mkap                 -- Make application node out of top two address
-                 | Update Int           -- Replace root of redex with pointer to value
-                 | Eval                 -- Evaluate top-of-stack to Weak Head Normal Form
-                 | Cond GMCode GMCode   -- Condition instruction
-                 | Unwind               -- Unwind application nodes onto stack
-                 | Add                  -- Arithmetic instructions
+
+data Instruction = Pushglobal Name          -- Push address of global on stack
+                 | Pushint Int              -- Push address of integer on stack
+                 | Push Int                 -- Push address of local variable on stack
+                 | Pop Int                  -- Pop n items from stack
+                 | Slide Int                -- Pop n items from stack leaving top-of-stack
+                 | Alloc Int                -- Allocate n pointers and put addresses on stack
+                 | Mkap                     -- Make application node out of top two address
+                 | Update Int               -- Replace root of redex with pointer to value
+                 | Eval                     -- Evaluate top-of-stack to Weak Head Normal Form
+                 | Cond GMCode GMCode       -- Condition instruction
+                 | Unwind                   -- Unwind application nodes onto stack
+                 | Add                      -- Arithmetic instructions
                  | Sub
                  | Mul
                  | Div
                  | Neg
-                 | Eq                   -- Relational instructions
+                 | Eq                       -- Relational instructions
                  | Ne
                  | Lt
                  | Le
                  | Gt
                  | Ge
+                 | Pack Int Int             -- Build NConstructor node
+                 | Casejump [(Int, GMCode)] -- Use tag of node on top-of-stack to jump to case-alternative
+                 | Split Int                -- Destructure constructor into components for alternative-body
+                 | Print                    -- Add value to output
                    deriving Show
 
 -- Executions stack
@@ -50,6 +58,7 @@ data Node = NNum Int
           | NApp Addr Addr
           | NGlobal Int GMCode
           | NPointer Addr
+          | NConstructor Int [Addr]
             deriving Show
 
 -- Global environment maps names to addresses
@@ -65,6 +74,7 @@ data GMStats = GMStats {
 
 -- Complete machine state
 data GMState = GMState {
+    gmOutput  :: GMOutput,
     gmCode    :: GMCode,
     gmDump    :: GMDump,
     gmStack   :: GMStack,
@@ -112,7 +122,7 @@ next state = do
 
 -- Turn program into initial G-Machine state
 compile :: Program -> GMState
-compile program = GMState codeInit [] [] heap globals statInit where
+compile program = GMState [] codeInit [] [] heap globals statInit where
     (heap, globals) = buildInitialHeap program
 
 -- Push main and unwind
@@ -292,6 +302,7 @@ dispatch Lt             = compBinary (<)
 dispatch Le             = compBinary (<=)
 dispatch Gt             = compBinary (>)
 dispatch Ge             = compBinary (>=)
+dispatch i              = error $ "instruction " ++ show i ++ " not implemented yet"
 
 -- Find global node by name
 -- (Pushglobal f : i, s,     d, h, m[(f, a)])
@@ -542,6 +553,7 @@ formatNode state addr = formatAddr addr <> colon <+> draw (hLoad (gmHeap state) 
         (v, _) = head (filter (\(x, b) -> b == addr) (gmGlobals state))
     draw (NApp a1 a2) = text "App" <+> formatAddr a1 <+> formatAddr a2
     draw (NPointer a) = text "Pointer to" <+> formatAddr a
+    draw (NConstructor tag components) =  text "Cons" <+> int tag <+> brackets (hsep $ map formatAddr components)
 
 -- Format an address
 formatAddr :: Addr -> Doc
