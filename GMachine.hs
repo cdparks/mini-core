@@ -9,7 +9,7 @@ import Data.List
 import Text.PrettyPrint
 import Debug.Trace
 
--- Output is just a list of characters
+-- Output is just a list of Chars
 type GMOutput = [Char]
 
 -- Code is just a list of instructions
@@ -309,8 +309,8 @@ dispatch Ge              = compBinary (>=)
 --dispatch i               = error $ "instruction " ++ show i ++ " not implemented yet"
 
 -- Find global node by name
--- (Pushglobal f : i, s,     d, h, m[(f, a)])
--- (i,                a : s, d, h, m)
+-- (o, Pushglobal f : i, s,     d, h, m[(f, a)])
+-- (o, i,                a : s, d, h, m)
 pushglobal :: Name -> GMState -> GMState
 pushglobal f state = state { gmStack = addr:gmStack state } where
     addr = case lookup f (gmGlobals state) of
@@ -318,38 +318,38 @@ pushglobal f state = state { gmStack = addr:gmStack state } where
         Nothing -> error ("Undeclared global " ++ f)
 
 -- Allocate number in heap and push on stack
--- (Pushint n : i, s,     d, h,              m)
--- (i,             a : s, d, h[(a, NNum n)], m)
+-- (o, Pushint n : i, s,     d, h,              m)
+-- (o, i,             a : s, d, h[(a, NNum n)], m)
 pushint :: Int -> GMState -> GMState
 pushint n state = state { gmStack = addr:gmStack state, gmHeap = heap' } where
     (heap', addr) = hAlloc (gmHeap state) $ NNum n
 
 -- Push address of argument on stack
--- (Push n : i, a0 : ... : an+1 : s,         d, h[(an + 1, NApp an an')], m)
--- (i,          an' : a0 : ... : an + 1 : s, d, h,                        m)
+-- (o, Push n : i, a0 : ... : an+1 : s,         d, h[(an + 1, NApp an an')], m)
+-- (o, i,          an' : a0 : ... : an + 1 : s, d, h,                        m)
 push :: Int -> GMState -> GMState
 push n state = state { gmStack = addr:stack } where
     stack = gmStack state
     addr  = stack !! n
 
 -- Pop n items from the stack
--- (Pop n : i, a1 : ... : an : s, d, h, m)
--- (i,         s,                 d, h, m)
+-- (o, Pop n : i, a1 : ... : an : s, d, h, m)
+-- (o, i,         s,                 d, h, m)
 pop :: Int -> GMState -> GMState
 pop n state =  state { gmStack = stack' } where
     stack' = drop n $ gmStack state
 
---- Remove items from stack leaving top-of-stack
---- (Slide n : i, a0 : ... : an : s, d, h, m)
---- (i,           a0 : s,            d, h, m)
+-- Remove items from stack leaving top-of-stack
+-- (o, Slide n : i, a0 : ... : an : s, d, h, m)
+-- (o, i,           a0 : s,            d, h, m)
 slide :: Int -> GMState -> GMState
 slide n state = state { gmStack = stack' } where
     (x:xs) = gmStack state
     stack' = x:drop n xs
 
 -- Allocate n nodes in the heap and put their addresses on the stack
--- (Alloc n : i, s,                 d, h,                                                  m)
--- (i,           a1 : ... : an : s, d, h[(a1, NPointer hNull), ..., (an, NPointer hNull)], m)
+-- (o, Alloc n : i, s,                 d, h,                                                  m)
+-- (o, i,           a1 : ... : an : s, d, h[(a1, NPointer hNull), ..., (an, NPointer hNull)], m)
 alloc :: Int -> GMState -> GMState
 alloc n state = state { gmStack = stack', gmHeap = heap' } where
     (heap', addrs) = allocNodes n $ gmHeap state
@@ -364,19 +364,19 @@ allocNodes n heap
         (heap'', addr) = hAlloc heap' (NPointer hNull)
 
 -- Replace root of redex with pointer to top-of-stack
--- (Update n : i, a : a0 : ... : an : s, d, h,                  m)
--- (i,            a0 : ... : an : s,     d, h[(an, NPointer a), m)
+-- (o, Update n : i, a : a0 : ... : an : s, d, h,                  m)
+-- (o, i,            a0 : ... : an : s,     d, h[(an, NPointer a), m)
 update :: Int -> GMState -> GMState
 update n state = state { gmStack = stack', gmHeap = heap' } where
     (addr:stack') = gmStack state
     heap' = hUpdate (gmHeap state) (stack' !! n) $ NPointer addr
 
 -- Choose first branch if top-of-stack is true (1)
--- (Cond t f : i, a : s, d, h[(a, NNum 1)], m)
--- (t : i,        s,     d, h,              m)
+-- (o, Cond t f : i, a : s, d, h[(a, NNum 1)], m)
+-- (o, t : i,        s,     d, h,              m)
 -- Choose second branch if top-of-stack if false (0)
--- (Cond t f : i, a : s, d, h[(a, NNum 0)], m)
--- (f : i,        s,     d, h,              m)
+-- (o, Cond t f : i, a : s, d, h[(a, NNum 0)], m)
+-- (o, f : i,        s,     d, h,              m)
 cond :: GMCode -> GMCode -> GMState -> GMState
 cond consequent alternative state = state { gmCode = code, gmStack = stack } where
     (addr:stack) = gmStack state
@@ -386,8 +386,8 @@ cond consequent alternative state = state { gmCode = code, gmStack = stack } whe
         node     -> error $ "Non-Boolean " ++ show node ++ " used in conditional"
 
 -- Build constructor node in heap from stack elements
--- (Pack t n : i, a1 : ... : an : s, d, h,                                    m)
--- (i,            a : s,             d, h[(a, NConstructor t [a1, ..., an])], m)
+-- (o, Pack t n : i, a1 : ... : an : s, d, h,                                    m)
+-- (o, i,            a : s,             d, h[(a, NConstructor t [a1, ..., an])], m)
 pack :: Int -> Int -> GMState -> GMState
 pack tag arity state = state { gmStack = addr:stack', gmHeap = heap' } where
     stack = gmStack state
@@ -396,8 +396,8 @@ pack tag arity state = state { gmStack = addr:stack', gmHeap = heap' } where
     (heap', addr) = hAlloc (gmHeap state) $ NConstructor tag args
 
 -- Evaluate top-of-stack to WHNF and use tag to jump to code
--- (Casejump [..., t -> i', ...] : i, a : s, d, h[(a, NConstructor t cs)], m)
--- (i' ++ i,                          a : s, d, h,                         m)
+-- (o, Casejump [..., t -> i', ...] : i, a : s, d, h[(a, NConstructor t cs)], m)
+-- (o, i' ++ i,                          a : s, d, h,                         m)
 casejump :: [(Int, GMCode)] -> GMState -> GMState
 casejump alts state = state { gmCode = branch ++ code } where
     addr:_ = gmStack state
@@ -407,8 +407,9 @@ casejump alts state = state { gmCode = branch ++ code } where
         Just branch -> branch
         Nothing     -> error "Non-exhaustive patterns in case expression"
 
--- (Split n : i, a : s,             d, h[(a, NConstructor t [a1, ..., an])], m)
--- (i,           a1 : ... : an : s, d, h,                                    m)
+-- Destructure constructor onto stack
+-- (o, Split n : i, a : s,             d, h[(a, NConstructor t [a1, ..., an])], m)
+-- (o, i,           a1 : ... : an : s, d, h,                                    m)
 split :: Int -> GMState -> GMState
 split n state = state { gmStack = addrs ++ stack } where
     addr:stack = gmStack state
@@ -416,8 +417,18 @@ split n state = state { gmStack = addrs ++ stack } where
     addrs | length args == n = args
           | otherwise        = error $ "Cannot destructure constructor into " ++ show n ++ " components"
 
+-- Print numbers and constructor components by adding values to output list
+-- (o,      Print : i, a : s, d, h[(a, NNum n)], m)
+-- (o ++ n, i,         s,     d, h,              m)
+-- Or
+-- (o, Print : i, a : s,                 d, h[(a, NConstructor t [a1, ..., an])], m)
+-- (o, i' ++ i,   a1 : ... : an : s,     d, h,                                    m)
 print' :: GMState -> GMState
-print' = undefined
+print' state = doPrint $ hLoad (gmHeap state) $ head $ gmStack state where
+    printN n = concat $ take n $ repeat [Eval, Print]
+    doPrint (NNum n)              = state { gmOutput = gmOutput state ++ show n }
+    doPrint (NConstructor _ args) = state { gmCode = printN (length args) ++ gmCode state }
+    doPrint node                  = error $ "Can't print node " ++ show node
 
 -- Build application from 2 addresses on top of stack
 -- (Mkap : i, a1 : a2 : s, d, h,                  m)
@@ -445,12 +456,22 @@ unwind state = newState $ hLoad heap x where
     dump = gmDump state
 
     -- Number on stack and empty dump; G-Machine is terminating.
-    -- ([Unwind], a : s, [], h[(a, NNum)], m)
+    -- ([Unwind], a : s, [], h[(a, NNum n)], m)
     -- ([],       a : s, [], h,            m)
     -- Or number on stack and not-empty dump; restore code and stack
-    -- ([Unwind], a : s,  (c, s') : d, h[(a, NNum)], m)
+    -- ([Unwind], a : s,  (c, s') : d, h[(a, NNum n)], m)
     -- (c,        a : s', d,           h,            m)
     newState (NNum _) = case dump of
+        (code', stack'):dump' -> state { gmCode = code', gmStack = x:stack', gmDump = dump' }
+        _                     -> state { gmCode = [] }
+
+    -- Constructor on stack and empty dump; G-Machine is terminating.
+    -- ([Unwind], a : s, [], h[(a, Constructor tar args)], m)
+    -- ([],       a : s, [], h,            m)
+    -- Or Constructor on stack and not-empty dump; restore code and stack
+    -- ([Unwind], a : s,  (c, s') : d, h[(a, Constructor tag args)], m)
+    -- (c,        a : s', d,           h,            m)
+    newState (NConstructor tag args) = case dump of
         (code', stack'):dump' -> state { gmCode = code', gmStack = x:stack', gmDump = dump' }
         _                     -> state { gmCode = [] }
 
