@@ -280,29 +280,33 @@ step state = dispatch x state' where
 
 -- Dispatch from instruction to implementation
 dispatch :: Instruction -> GMState -> GMState
-dispatch (Pushglobal f) = pushglobal f
-dispatch (Pushint n)    = pushint n
-dispatch (Push n)       = push n
-dispatch (Pop n)        = pop n
-dispatch (Slide n)      = slide n
-dispatch (Alloc n)      = alloc n
-dispatch (Update n)     = update n
-dispatch (Cond t f)     = cond t f
-dispatch Mkap           = mkap
-dispatch Eval           = eval
-dispatch Unwind         = unwind
-dispatch Add            = arithBinary (+)
-dispatch Sub            = arithBinary (-)
-dispatch Mul            = arithBinary (*)
-dispatch Div            = arithBinary div
-dispatch Neg            = arithUnary negate
-dispatch Eq             = compBinary (==)
-dispatch Ne             = compBinary (/=)
-dispatch Lt             = compBinary (<)
-dispatch Le             = compBinary (<=)
-dispatch Gt             = compBinary (>)
-dispatch Ge             = compBinary (>=)
-dispatch i              = error $ "instruction " ++ show i ++ " not implemented yet"
+dispatch (Pushglobal f)  = pushglobal f
+dispatch (Pushint n)     = pushint n
+dispatch (Push n)        = push n
+dispatch (Pop n)         = pop n
+dispatch (Slide n)       = slide n
+dispatch (Alloc n)       = alloc n
+dispatch (Update n)      = update n
+dispatch (Cond t f)      = cond t f
+dispatch (Pack t n)      = pack t n
+dispatch (Casejump alts) = casejump alts
+dispatch (Split n)       = split n
+dispatch Mkap            = mkap
+dispatch Eval            = eval
+dispatch Unwind          = unwind
+dispatch Print           = print'
+dispatch Add             = arithBinary (+)
+dispatch Sub             = arithBinary (-)
+dispatch Mul             = arithBinary (*)
+dispatch Div             = arithBinary div
+dispatch Neg             = arithUnary negate
+dispatch Eq              = compBinary (==)
+dispatch Ne              = compBinary (/=)
+dispatch Lt              = compBinary (<)
+dispatch Le              = compBinary (<=)
+dispatch Gt              = compBinary (>)
+dispatch Ge              = compBinary (>=)
+--dispatch i               = error $ "instruction " ++ show i ++ " not implemented yet"
 
 -- Find global node by name
 -- (Pushglobal f : i, s,     d, h, m[(f, a)])
@@ -380,6 +384,40 @@ cond consequent alternative state = state { gmCode = code, gmStack = stack } whe
         (NNum 1) -> consequent ++ gmCode state
         (NNum 0) -> alternative ++ gmCode state
         node     -> error $ "Non-Boolean " ++ show node ++ " used in conditional"
+
+-- Build constructor node in heap from stack elements
+-- (Pack t n : i, a1 : ... : an : s, d, h,                                    m)
+-- (i,            a : s,             d, h[(a, NConstructor t [a1, ..., an])], m)
+pack :: Int -> Int -> GMState -> GMState
+pack tag arity state = state { gmStack = addr:stack', gmHeap = heap' } where
+    stack = gmStack state
+    (args, stack') | length stack < arity = error "Not enough arguments to saturate constructor"
+                   | otherwise            = splitAt arity stack
+    (heap', addr) = hAlloc (gmHeap state) $ NConstructor tag args
+
+-- Evaluate top-of-stack to WHNF and use tag to jump to code
+-- (Casejump [..., t -> i', ...] : i, a : s, d, h[(a, NConstructor t cs)], m)
+-- (i' ++ i,                          a : s, d, h,                         m)
+casejump :: [(Int, GMCode)] -> GMState -> GMState
+casejump alts state = state { gmCode = branch ++ code } where
+    addr:_ = gmStack state
+    (NConstructor tag _) = hLoad (gmHeap state) addr
+    code = gmCode state
+    branch = case lookup tag alts of
+        Just branch -> branch
+        Nothing     -> error "Non-exhaustive patterns in case expression"
+
+-- (Split n : i, a : s,             d, h[(a, NConstructor t [a1, ..., an])], m)
+-- (i,           a1 : ... : an : s, d, h,                                    m)
+split :: Int -> GMState -> GMState
+split n state = state { gmStack = addrs ++ stack } where
+    addr:stack = gmStack state
+    (NConstructor _ args) = hLoad (gmHeap state) addr
+    addrs | length args == n = args
+          | otherwise        = error $ "Cannot destructure constructor into " ++ show n ++ " components"
+
+print' :: GMState -> GMState
+print' = undefined
 
 -- Build application from 2 addresses on top of stack
 -- (Mkap : i, a1 : a2 : s, d, h,                  m)
