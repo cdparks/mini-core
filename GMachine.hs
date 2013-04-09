@@ -95,7 +95,11 @@ extraDefs = []
 
 -- Compile and run program
 run :: String -> String
-run = show . formatResults . evaluate . compile . parseCore
+run = show . formatLast . evaluate . compile . parseCore
+
+-- Compile and run program printing intermediate states
+debug :: String -> String
+debug = show . formatResults . evaluate . compile . parseCore
 
 -- Parse and compile program and evaluate first state.
 -- Used for interactive debugging in ghci.
@@ -127,7 +131,7 @@ compile program = GMState [] codeInit [] [] heap globals statInit where
 
 -- Push main and unwind
 codeInit :: GMCode
-codeInit = [Pushglobal "main", Eval]
+codeInit = [Pushglobal "main", Eval, Print]
 
 -- Start at step zero
 statInit :: GMStats
@@ -199,7 +203,17 @@ compileE env e@(App (App (Var op) e1) e2) = case lookup op binaryOps of
     Nothing          -> compileC env e ++ [Eval]
 compileE env (App (App (App (Var "if") e1) e2) e3) =
     compileE env e1 ++ [Cond (compileE env e2) (compileE env e3)]
+compileE env (Case e alts) = compileE env e ++ [Casejump $ compileD env compileE' alts]
 compileE env x = compileC env x ++ [Eval]
+
+-- Normal compileE scheme bracketed by Split and Slide
+compileE' :: Int -> GMCompiler
+compileE' offset env expr = [Split offset] ++ compileE env expr ++ [Slide offset]
+
+-- Compile code for alternatives of a case expression
+compileD :: GMEnvironment -> (Int -> GMCompiler) -> [Alt] -> [(Int, GMCode)]
+compileD env comp = map compileA where
+    compileA (tag, args, expr) = (tag, comp (length args) (zip args [0..] ++ argOffset (length args) env) expr)
 
 -- Compile the expression e in a strict context. Generated code will
 -- construct the graph of e in the environment p leaving a pointer
@@ -423,11 +437,13 @@ split n state = state { gmStack = addrs ++ stack } where
 -- Or
 -- (o, Print : i, a : s,                 d, h[(a, NConstructor t [a1, ..., an])], m)
 -- (o, i' ++ i,   a1 : ... : an : s,     d, h,                                    m)
+-- where i' = concat (take n (repeat [Eval, Print]))
 print' :: GMState -> GMState
-print' state = doPrint $ hLoad (gmHeap state) $ head $ gmStack state where
+print' state = doPrint $ hLoad (gmHeap state) addr where
+    addr:stack = gmStack state
     printN n = concat $ take n $ repeat [Eval, Print]
-    doPrint (NNum n)              = state { gmOutput = gmOutput state ++ show n }
-    doPrint (NConstructor _ args) = state { gmCode = printN (length args) ++ gmCode state }
+    doPrint (NNum n)              = state { gmOutput = gmOutput state ++ show n, gmStack = stack }
+    doPrint (NConstructor _ args) = state { gmCode = printN (length args) ++ gmCode state, gmStack = args ++ stack }
     doPrint node                  = error $ "Can't print node " ++ show node
 
 -- Build application from 2 addresses on top of stack
@@ -557,6 +573,10 @@ arithBinary = primBinary boxInt unboxInt
 -- Generate a state transistion performing a relational binary operation
 compBinary :: (Int -> Int -> Bool) -> (GMState -> GMState)
 compBinary = primBinary boxBool unboxInt
+
+-- Print output from last state
+formatLast :: [GMState] -> Doc
+formatLast = text . show . gmOutput . last
 
 -- Format output
 formatResults :: [GMState] -> Doc
