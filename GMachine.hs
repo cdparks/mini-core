@@ -180,17 +180,16 @@ allocSC heap (name, arity, instructions) = (heap', (name, addr)) where
 compileSC :: (Name, [Name], Expr) -> (Name, Int, GMCode)
 compileSC (name, env, body) = (name, length env, compileR (zip env [0..]) body)
 
--- Compile the expression e in the environment p for a
--- supercombinator of arity d by generating code which
--- instantiates e and then unwinds the resulting stack
--- R(e) p d = C(e) p ++ [Update d, Pop d, Unwind]
+-- Scheme R[e] p d generates code which instantiates the expression
+-- e in environment p, for a supercombinator of arity d, and then
+-- proceeds to unwind the resulting stack
 compileR :: GMCompiler
 compileR env e = compileE env e ++ [Update n, Pop n, Unwind] where
     n = length env
 
--- Compile the expression e in a lazy contxt. Generated code will
--- construct the graph of e in the environment p leaving a pointer
--- to it on top of the stack
+-- Scheme E[e] p compiles code that evaluates an expression e to
+-- WHNF in environment p, leaving a pointer to the expression on
+-- top of the stack.
 compileE :: GMCompiler
 compileE env (Num n) = [Pushint n]
 compileE env (Let recursive defs body)
@@ -207,7 +206,7 @@ compileE env (App (App (App (Var "if") e1) e2) e3) =
 compileE env (Case e alts) = compileE env e ++ [Casejump $ compileD env compileE' alts]
 compileE env x = compileC env x ++ [Eval]
 
--- Normal compileE scheme bracketed by Split and Slide
+-- Normal E Scheme bracketed by Split and Slide
 compileE' :: Int -> GMCompiler
 compileE' offset env expr = [Split offset] ++ compileE env expr ++ [Slide offset]
 
@@ -216,9 +215,8 @@ compileD :: GMEnvironment -> (Int -> GMCompiler) -> [Alt] -> [(Int, GMCode)]
 compileD env comp = map compileA where
     compileA (tag, args, expr) = (tag, comp (length args) (zip args [0..] ++ argOffset (length args) env) expr)
 
--- Compile the expression e in a strict context. Generated code will
--- construct the graph of e in the environment p leaving a pointer
--- to it on top of the stack
+-- Scheme C[e] p generates code which constructs the graph of e
+-- in environment p, leaving a pointer to it on top of the stack.
 compileC :: GMCompiler
 compileC env (Var v) = case lookup v env of
     Just n  -> [Push n]
