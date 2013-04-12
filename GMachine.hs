@@ -10,12 +10,13 @@ import Text.PrettyPrint
 import Debug.Trace
 
 -- Output is just a list of Chars
-type GMOutput = [Char]
+type GMOutput = [String]
 
 -- Code is just a list of instructions
 type GMCode = [Instruction]
 
 data Instruction = Pushglobal Name          -- Push address of global on stack
+                 | Pushcons Name Int Int    -- Push address of wrapped constructor on stack
                  | Pushint Int              -- Push address of integer on stack
                  | Push Int                 -- Push address of local variable on stack
                  | Pop Int                  -- Pop n items from stack
@@ -224,9 +225,12 @@ compileC env (Var v) = case lookup v env of
     Nothing -> [Pushglobal v]
 compileC env (Num n) = [Pushint n]
 compileC env (App e1 e2) = compileC env e2 ++ compileC (argOffset 1 env) e1 ++ [Mkap]
+compileC env (Cons tag arity) = [Pushcons ("Pack{" ++ show tag ++ "," ++ show arity ++ "}") tag arity]
+compileC env (Case e alts) = compileE env e ++ [Casejump $ compileD env compileE' alts]
 compileC env (Let recursive defs body)
     | recursive = compileLetrec compileC env defs body
     | otherwise = compileLet    compileC env defs body
+compileC env x = error $ "no pattern for " ++ show x ++ "?!"
 
 -- Generate code to construct each let binding and the let body.
 -- Code must remove bindings after body is evaluated.
@@ -294,32 +298,33 @@ step state = dispatch x state' where
 
 -- Dispatch from instruction to implementation
 dispatch :: Instruction -> GMState -> GMState
-dispatch (Pushglobal f)  = pushglobal f
-dispatch (Pushint n)     = pushint n
-dispatch (Push n)        = push n
-dispatch (Pop n)         = pop n
-dispatch (Slide n)       = slide n
-dispatch (Alloc n)       = alloc n
-dispatch (Update n)      = update n
-dispatch (Cond t f)      = cond t f
-dispatch (Pack t n)      = pack t n
-dispatch (Casejump alts) = casejump alts
-dispatch (Split n)       = split n
-dispatch Mkap            = mkap
-dispatch Eval            = eval
-dispatch Unwind          = unwind
-dispatch Print           = print'
-dispatch Add             = arithBinary (+)
-dispatch Sub             = arithBinary (-)
-dispatch Mul             = arithBinary (*)
-dispatch Div             = arithBinary div
-dispatch Neg             = arithUnary negate
-dispatch Eq              = compBinary (==)
-dispatch Ne              = compBinary (/=)
-dispatch Lt              = compBinary (<)
-dispatch Le              = compBinary (<=)
-dispatch Gt              = compBinary (>)
-dispatch Ge              = compBinary (>=)
+dispatch (Pushglobal f)   = pushglobal f
+dispatch (Pushcons f t n) = pushcons f t n
+dispatch (Pushint n)      = pushint n
+dispatch (Push n)         = push n
+dispatch (Pop n)          = pop n
+dispatch (Slide n)        = slide n
+dispatch (Alloc n)        = alloc n
+dispatch (Update n)       = update n
+dispatch (Cond t f)       = cond t f
+dispatch (Pack t n)       = pack t n
+dispatch (Casejump alts)  = casejump alts
+dispatch (Split n)        = split n
+dispatch Mkap             = mkap
+dispatch Eval             = eval
+dispatch Unwind           = unwind
+dispatch Print            = print'
+dispatch Add              = arithBinary (+)
+dispatch Sub              = arithBinary (-)
+dispatch Mul              = arithBinary (*)
+dispatch Div              = arithBinary div
+dispatch Neg              = arithUnary negate
+dispatch Eq               = compBinary (==)
+dispatch Ne               = compBinary (/=)
+dispatch Lt               = compBinary (<)
+dispatch Le               = compBinary (<=)
+dispatch Gt               = compBinary (>)
+dispatch Ge               = compBinary (>=)
 --dispatch i               = error $ "instruction " ++ show i ++ " not implemented yet"
 
 -- Find global node by name
@@ -330,6 +335,14 @@ pushglobal f state = state { gmStack = addr:gmStack state } where
     addr = case lookup f (gmGlobals state) of
         Just x  -> x
         Nothing -> error ("Undeclared global " ++ f)
+
+-- Find global node for constructor by name or add to globals
+pushcons :: Name -> Int -> Int -> GMState -> GMState
+pushcons name tag arity state = case lookup name (gmGlobals state) of
+    Just addr -> state { gmStack = addr:gmStack state }
+    Nothing   -> state { gmStack = addr:gmStack state, gmHeap = heap, gmGlobals = globals } where
+        (heap, addr) = hAlloc (gmHeap state) $ NGlobal arity [Pack tag arity, Update 0, Unwind]
+        globals = (name, addr):gmGlobals state
 
 -- Allocate number in heap and push on stack
 -- (o, Pushint n : i, s,     d, h,              m)
@@ -442,7 +455,7 @@ print' :: GMState -> GMState
 print' state = doPrint $ hLoad (gmHeap state) addr where
     addr:stack = gmStack state
     printN n = concat $ take n $ repeat [Eval, Print]
-    doPrint (NNum n)              = state { gmOutput = gmOutput state ++ show n, gmStack = stack }
+    doPrint (NNum n)              = state { gmOutput = show n:gmOutput state, gmStack = stack }
     doPrint (NConstructor _ args) = state { gmCode = printN (length args) ++ gmCode state, gmStack = args ++ stack }
     doPrint node                  = error $ "Can't print node " ++ show node
 
@@ -576,7 +589,7 @@ compBinary = primBinary boxBool unboxInt
 
 -- Print output from last state
 formatLast :: [GMState] -> Doc
-formatLast = text . show . gmOutput . last
+formatLast = text . show . (intercalate " ") . reverse . gmOutput . last
 
 -- Format output
 formatResults :: [GMState] -> Doc
