@@ -1,15 +1,13 @@
 module Parse (
-    parseCore,
-    showParse
+    parseCore
 ) where
+
+import Types
 
 import Text.ParserCombinators.Parsec
 import Text.ParserCombinators.Parsec.Expr
 import Text.ParserCombinators.Parsec.Language
 import qualified Text.ParserCombinators.Parsec.Token as Token
-
-import Expr
-import Format
 
 -- Language definition for lexer
 languageDef =
@@ -25,7 +23,7 @@ languageDef =
                                        , "of"
                                        , "Pack"
                                        ]
-             , Token.reservedOpNames = "\\":"=":"->":(map fst binaryOps)
+             , Token.reservedOpNames = "\\":"=":"->":(map fst precByOp)
              }
 
 -- Generate lexer and bind names that we'll use
@@ -47,9 +45,6 @@ parseCore s =
     case parse pCore "core" s of
         Left e  -> error $ show e
         Right r -> r
-
-showParse :: String -> String
-showParse = show . formatProgram . parseCore
 
 -- Program -> Combinator [; Combinator]*
 pCore :: Parser Program

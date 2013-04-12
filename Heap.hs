@@ -1,6 +1,4 @@
 module Heap (
-    Heap,
-    Addr,
     hInit,
     hAlloc,
     hUpdate,
@@ -10,10 +8,7 @@ module Heap (
     hNull
 ) where
 
-type Addr = Int
-
--- (size, free-list, environment mapping addresses to live objects)
-type Heap a = (Int, [Addr], [(Addr, a)])
+import Types
 
 -- Initial heap with an unbounded free-list and empty environment
 hInit :: Heap a
