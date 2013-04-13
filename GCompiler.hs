@@ -124,7 +124,7 @@ compileC env (Var v) = case lookup v env of
     Nothing -> [Pushglobal v]
 compileC env (Num n) = [Pushint n]
 compileC env (App e1 e2) = compileC env e2 ++ compileC (argOffset 1 env) e1 ++ [Mkap]
-compileC env (Cons tag arity) = [Pushcons ("Pack{" ++ show tag ++ "," ++ show arity ++ "}") tag arity]
+compileC env (Cons tag arity) = replicate arity (Push $ arity - 1) ++ [Pack tag arity]
 compileC env (Case e alts) = compileE env e ++ [Casejump $ compileD env compileE' alts]
 compileC env (Let recursive defs body)
     | recursive = compileLetrec compileC env defs body
