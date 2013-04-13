@@ -2,6 +2,7 @@ module Main where
 
 import Types
 import Parse
+import Transforms
 import GCompiler
 import GMachine
 import Format
@@ -10,11 +11,11 @@ import System.Environment (getArgs)
 
 -- Compile and run program
 run :: String -> String
-run = show . formatLast . evaluate . compile . parseCore
+run = show . formatLast . evaluate . compile . transform . parseCore
 
 -- Compile and run program printing intermediate states
 debug :: String -> String
-debug = show . formatResults . evaluate . compile . parseCore
+debug = show . formatResults . evaluate . compile . transform . parseCore
 
 -- Parse and compile program and evaluate first state.
 -- Used for interactive debugging in ghci.
@@ -27,7 +28,7 @@ debug = show . formatResults . evaluate . compile . parseCore
 --   ...
 start :: String -> IO GMState
 start p = do
-    state <- return (single (compile (parseCore p)))
+    state <- return (single (compile (transform (parseCore p))))
     putStrLn $ show $ formatResults [state]
     return state
 
