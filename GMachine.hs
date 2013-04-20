@@ -233,9 +233,7 @@ unwind state = newState $ hLoad heap x where
     -- Or number on stack and not-empty dump; restore code and stack
     -- ([Unwind], a : s,  (c, s') : d, h[(a, NNum n)], m)
     -- (c,        a : s', d,           h,            m)
-    newState (NNum _) = case dump of
-        (code', stack'):dump' -> state { gmCode = code', gmStack = x:stack', gmDump = dump' }
-        _                     -> state { gmCode = [] }
+    newState (NNum _) = restoreDump x state
 
     -- Constructor on stack and empty dump; G-Machine is terminating.
     -- ([Unwind], a : s, [], h[(a, Constructor tar args)], m)
@@ -243,9 +241,7 @@ unwind state = newState $ hLoad heap x where
     -- Or Constructor on stack and not-empty dump; restore code and stack
     -- ([Unwind], a : s,  (c, s') : d, h[(a, Constructor tag args)], m)
     -- (c,        a : s', d,           h,            m)
-    newState (NConstructor tag args) = case dump of
-        (code', stack'):dump' -> state { gmCode = code', gmStack = x:stack', gmDump = dump' }
-        _                     -> state { gmCode = [] }
+    newState (NConstructor tag args) = restoreDump x state
 
     -- Application; keep unwinding applications onto stack
     -- ([Unwind], a : s,      d, h[(a, NApp a1 a2)], m)
@@ -265,10 +261,18 @@ unwind state = newState $ hLoad heap x where
     -- can't, we should just return the root of the redex:
     -- ([Unwind], [a0, ..., ak], (i, s) : d, h[(a0, NGlobal n c)], m)
     -- (i,        ak : s,                 d, h,                    m) when k < n
-    newState (NGlobal n code) = case (dump, length xs < n) of
-        ((code', stack'):dump', True) -> state { gmCode = code', gmStack = last (x:xs):stack' }
-        (_, False)                    -> state { gmCode = code,  gmStack = rearrange n heap (x:xs) }
-        (_, True)                     -> error "Unwinding with too few arguments"
+    newState (NGlobal n code)
+        | length xs >= n = state { gmCode = code,  gmStack = rearrange n heap (x:xs) }
+        | otherwise      = case dump of
+            (code', stack'):dump' -> state { gmCode = code', gmStack = last (x:xs):stack' }
+            _                     -> error "Unwinding with too few arguments"
+
+-- If dump is not empty, restore to machine state. Otherwise,
+-- halt execution.
+restoreDump :: Addr -> GMState -> GMState
+restoreDump addr state = case gmDump state of
+    (code, stack):dump -> state { gmCode = code, gmStack = addr:stack, gmDump = dump }
+    _                  -> state { gmCode = [] }
 
 -- Pull n arguments directly onto the stack out of NApp nodes
 rearrange :: Int -> GMHeap -> GMStack -> GMStack
