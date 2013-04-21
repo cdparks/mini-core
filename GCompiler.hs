@@ -26,18 +26,20 @@ extraDefs = []
 -- Compiled primitives
 prims :: [(Name, Int, GMCode)]
 prims =
-    [("+", 2, [Push 1, Eval, Push 1, Eval, Add, Update 2, Pop 2, Unwind]),
-     ("-", 2, [Push 1, Eval, Push 1, Eval, Sub, Update 2, Pop 2, Unwind]),
-     ("*", 2, [Push 1, Eval, Push 1, Eval, Mul, Update 2, Pop 2, Unwind]),
-     ("/", 2, [Push 1, Eval, Push 1, Eval, Div, Update 2, Pop 2, Unwind]),
+    [("+",      2, [Push 1, Eval, Push 1, Eval, Add, Update 2, Pop 2, Unwind]),
+     ("-",      2, [Push 1, Eval, Push 1, Eval, Sub, Update 2, Pop 2, Unwind]),
+     ("*",      2, [Push 1, Eval, Push 1, Eval, Mul, Update 2, Pop 2, Unwind]),
+     ("/",      2, [Push 1, Eval, Push 1, Eval, Div, Update 2, Pop 2, Unwind]),
      ("negate", 1, [Push 1, Eval, Neg, Update 1, Pop 1, Unwind]),
-     ("==", 2, [Push 1, Eval, Push 1, Eval, Eq, Update 2, Pop 2, Unwind]),
-     ("/=", 2, [Push 1, Eval, Push 1, Eval, Ne, Update 2, Pop 2, Unwind]),
-     ("<", 2, [Push 1, Eval, Push 1, Eval, Lt, Update 2, Pop 2, Unwind]),
-     ("<=", 2, [Push 1, Eval, Push 1, Eval, Le, Update 2, Pop 2, Unwind]),
-     (">", 2, [Push 1, Eval, Push 1, Eval, Gt, Update 2, Pop 2, Unwind]),
-     (">=", 2, [Push 1, Eval, Push 1, Eval, Ge, Update 2, Pop 2, Unwind]),
-     ("if", 3, [Push 0, Eval, Cond [Push 1] [Push 2], Update 3, Pop 3, Unwind])]
+     ("==",     2, [Push 1, Eval, Push 1, Eval, Eq, Update 2, Pop 2, Unwind]),
+     ("/=",     2, [Push 1, Eval, Push 1, Eval, Ne, Update 2, Pop 2, Unwind]),
+     ("<",      2, [Push 1, Eval, Push 1, Eval, Lt, Update 2, Pop 2, Unwind]),
+     ("<=",     2, [Push 1, Eval, Push 1, Eval, Le, Update 2, Pop 2, Unwind]),
+     (">",      2, [Push 1, Eval, Push 1, Eval, Gt, Update 2, Pop 2, Unwind]),
+     (">=",     2, [Push 1, Eval, Push 1, Eval, Ge, Update 2, Pop 2, Unwind]),
+     ("if",     3, [Push 0, Eval, Casejump [(1, [Split 0, Push 2, Eval, Slide 0]),
+                                            (2, [Split 0, Push 1, Eval, Slide 0])],
+                    Update 3, Pop 3, Unwind])]
 
 binaryOps :: [(Name, Instruction)]
 binaryOps =
@@ -102,8 +104,6 @@ compileE env e@(App (Var op) e1) = case lookup op unaryOps of
 compileE env e@(App (App (Var op) e1) e2) = case lookup op binaryOps of
     Just instruction -> compileE env e2 ++ compileE (argOffset 1 env) e1 ++ [instruction]
     Nothing          -> compileC env e ++ [Eval]
-compileE env (App (App (App (Var "if") e1) e2) e3) =
-    compileE env e1 ++ [Cond (compileE env e2) (compileE env e3)]
 compileE env (Case e alts) = compileE env e ++ [Casejump $ compileD env compileE' alts]
 compileE env x = compileC env x ++ [Eval]
 

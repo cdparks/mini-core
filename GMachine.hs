@@ -49,7 +49,6 @@ dispatch (Pop n)          = pop n
 dispatch (Slide n)        = slide n
 dispatch (Alloc n)        = alloc n
 dispatch (Update n)       = update n
-dispatch (Cond t f)       = cond t f
 dispatch (Pack t n)       = pack t n
 dispatch (Casejump alts)  = casejump alts
 dispatch (Split n)        = split n
@@ -140,20 +139,6 @@ update :: Int -> GMState -> GMState
 update n state = state { gmStack = stack', gmHeap = heap' } where
     (addr:stack') = gmStack state
     heap' = hUpdate (gmHeap state) (stack' !! n) $ NPointer addr
-
--- Choose first branch if top-of-stack is true (1)
--- (o, Cond t f : i, a : s, d, h[(a, NNum 1)], m)
--- (o, t : i,        s,     d, h,              m)
--- Choose second branch if top-of-stack if false (0)
--- (o, Cond t f : i, a : s, d, h[(a, NNum 0)], m)
--- (o, f : i,        s,     d, h,              m)
-cond :: GMCode -> GMCode -> GMState -> GMState
-cond consequent alternative state = state { gmCode = code, gmStack = stack } where
-    (addr:stack) = gmStack state
-    code = case hLoad (gmHeap state) addr of
-        (NNum 1) -> consequent ++ gmCode state
-        (NNum 0) -> alternative ++ gmCode state
-        node     -> error $ "Non-Boolean " ++ show node ++ " used in conditional"
 
 -- Build constructor node in heap from stack elements
 -- (o, Pack t n : i, a1 : ... : an : s, d, h,                                    m)
@@ -299,10 +284,10 @@ unboxInt addr state = case hLoad (gmHeap state) addr of
 -- Box Boolean as NNum node in heap and put on top-of-stack
 boxBool :: Bool -> GMState -> GMState
 boxBool b state = state { gmStack = addr:stack, gmHeap = heap } where
-    (heap, addr) = hAlloc (gmHeap state) $ NNum b'
+    (heap, addr) = hAlloc (gmHeap state) $ NConstructor b' []
     stack = gmStack state
-    b' | b         = 1
-       | otherwise = 0
+    b' | b         = 2  -- 2 is tag for True
+       | otherwise = 1  -- 1 is tag for False
 
 -- Generate a state transition performing a primitive unary operation
 primUnary :: (b -> GMState -> GMState) -- boxing function
