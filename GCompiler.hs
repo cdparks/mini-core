@@ -11,41 +11,47 @@ import Debug.Trace
 
 -- Standard library
 prelude :: Program
-prelude = [
-    ("I",  ["x"], Var "x"),
-    ("K",  ["x", "y"], Var "x"),
-    ("K1", ["x", "y"], Var "y"),
-    ("S",  ["f", "g", "x"], App (App (Var "f") (Var "x"))
-                                (App (Var "g") (Var "x"))),
-    ("compose", ["f", "g", "x"], App (Var "f") (App (Var "g") (Var "x"))),
-    ("twice",   ["f"], App (App (Var "compose") (Var "f")) (Var "f"))]
+prelude = [ ("I",  ["x"], Var "x")
+          , ("K",  ["x", "y"], Var "x")
+          , ("K1", ["x", "y"], Var "y")
+          , ("S",  ["f", "g", "x"], App (App (Var "f") (Var "x"))
+                                        (App (Var "g") (Var "x")))
+          , ("compose", ["f", "g", "x"], App (Var "f") (App (Var "g") (Var "x")))
+          , ("twice",   ["f"], App (App (Var "compose") (Var "f")) (Var "f"))
+          ]
 
 -- Extra definitions to add to the initial global environment
 extraDefs = []
 
 -- Compiled primitives
 prims :: [(Name, Int, GMCode)]
-prims =
-    [("+",      2, [Push 1, Eval, Push 1, Eval, Add, Update 2, Pop 2, Unwind]),
-     ("-",      2, [Push 1, Eval, Push 1, Eval, Sub, Update 2, Pop 2, Unwind]),
-     ("*",      2, [Push 1, Eval, Push 1, Eval, Mul, Update 2, Pop 2, Unwind]),
-     ("/",      2, [Push 1, Eval, Push 1, Eval, Div, Update 2, Pop 2, Unwind]),
-     ("negate", 1, [Push 1, Eval, Neg, Update 1, Pop 1, Unwind]),
-     ("==",     2, [Push 1, Eval, Push 1, Eval, Eq, Update 2, Pop 2, Unwind]),
-     ("/=",     2, [Push 1, Eval, Push 1, Eval, Ne, Update 2, Pop 2, Unwind]),
-     ("<",      2, [Push 1, Eval, Push 1, Eval, Lt, Update 2, Pop 2, Unwind]),
-     ("<=",     2, [Push 1, Eval, Push 1, Eval, Le, Update 2, Pop 2, Unwind]),
-     (">",      2, [Push 1, Eval, Push 1, Eval, Gt, Update 2, Pop 2, Unwind]),
-     (">=",     2, [Push 1, Eval, Push 1, Eval, Ge, Update 2, Pop 2, Unwind]),
-     ("if",     3, [Push 0, Eval, Casejump [(1, [Split 0, Push 2, Eval, Slide 0]),
-                                            (2, [Split 0, Push 1, Eval, Slide 0])],
-                    Update 3, Pop 3, Unwind])]
+prims = [ ("+",      2, [Push 1, Eval, Push 1, Eval, Add, Update 2, Pop 2, Unwind])
+        , ("-",      2, [Push 1, Eval, Push 1, Eval, Sub, Update 2, Pop 2, Unwind])
+        , ("*",      2, [Push 1, Eval, Push 1, Eval, Mul, Update 2, Pop 2, Unwind])
+        , ("/",      2, [Push 1, Eval, Push 1, Eval, Div, Update 2, Pop 2, Unwind])
+        , ("negate", 1, [Push 1, Eval, Neg, Update 1, Pop 1, Unwind])
+        , ("==",     2, [Push 1, Eval, Push 1, Eval, Eq, Update 2, Pop 2, Unwind])
+        , ("/=",     2, [Push 1, Eval, Push 1, Eval, Ne, Update 2, Pop 2, Unwind])
+        , ("<",      2, [Push 1, Eval, Push 1, Eval, Lt, Update 2, Pop 2, Unwind])
+        , ("<=",     2, [Push 1, Eval, Push 1, Eval, Le, Update 2, Pop 2, Unwind])
+        , (">",      2, [Push 1, Eval, Push 1, Eval, Gt, Update 2, Pop 2, Unwind])
+        , (">=",     2, [Push 1, Eval, Push 1, Eval, Ge, Update 2, Pop 2, Unwind])
+        , ("if",     3, [Push 0, Eval, Casejump [ (1, [Split 0, Push 2, Eval, Slide 0])
+                                                , (2, [Split 0, Push 1, Eval, Slide 0])], Update 3, Pop 3, Unwind])
+        ]
 
 binaryOps :: [(Name, Instruction)]
-binaryOps =
-    [("+", Add), ("-", Sub), ("*", Mul), ("/", Div),
-     ("==", Eq), ("/=", Ne), (">=", Ge),
-     (">",  Gt), ("<=", Le), ("<", Lt)]
+binaryOps = [ ("+", Add)
+            , ("-", Sub)
+            , ("*", Mul)
+            , ("/", Div)
+            , ("==", Eq)
+            , ("/=", Ne)
+            , (">=", Ge)
+            , (">",  Gt)
+            , ("<=", Le)
+            , ("<", Lt)
+            ]
 
 unaryOps :: [(Name, Instruction)]
 unaryOps = [("negate", Neg)]
@@ -55,8 +61,16 @@ type GMCompiler = GMEnvironment -> Expr -> GMCode
 
 -- Turn program into initial G-Machine state
 compile :: Program -> GMState
-compile program = GMState [] codeInit [] [] heap globals statInit where
-    (heap, globals) = buildInitialHeap program
+compile program = GMState
+    { gmOutput  = []
+    , gmCode    = codeInit
+    , gmDump    = []
+    , gmVStack  = []
+    , gmStack   = []
+    , gmHeap    = heap
+    , gmGlobals = globals
+    , gmStats   = statInit
+    } where (heap, globals) = buildInitialHeap program
 
 -- Push main and unwind
 codeInit :: GMCode

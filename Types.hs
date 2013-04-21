@@ -19,18 +19,19 @@ type Program    = [Combinator]
 
 -- Map binary ops to precedence
 precByOp :: [(Name, Int)]
-precByOp = [("||", 2), -- Boolean OR
-            ("&&", 3), -- Boolean AND
-            ("==", 4), -- Comparators
-            ("/=", 4),
-            ("<",  4),
-            (">",  4),
-            ("<=", 4),
-            (">=", 4),
-            ("+",  6), -- Arithmetic operators
-            ("-",  6),
-            ("*",  7),
-            ("/",  7)]
+precByOp = [ ("||", 2) -- Boolean OR
+           , ("&&", 3) -- Boolean AND
+           , ("==", 4) -- Comparators
+           , ("/=", 4)
+           , ("<",  4)
+           , (">",  4)
+           , ("<=", 4)
+           , (">=", 4)
+           , ("+",  6) -- Arithmetic operators
+           , ("-",  6)
+           , ("*",  7)
+           , ("/",  7)
+           ]
 
 {- Heap types -}
 
@@ -79,6 +80,9 @@ data Instruction = Pushglobal Name          -- Push address of global on stack
 -- Execution stack
 type GMStack = [Addr]
 
+-- Value stack for arithmetic
+type GMVStack = [Int]
+
 -- Save machine's current context during
 -- strict evaluation
 type GMDump = [(GMCode, GMStack)]
@@ -101,20 +105,20 @@ type GMGlobals = [(Name, Addr)]
 type GMEnvironment = [(Name, Int)]
 
 -- Tally information about machine state
-data GMStats = GMStats {
-    gmSteps :: Int
-}
+data GMStats = GMStats
+    { gmSteps :: Int }
 
 -- Complete machine state
-data GMState = GMState {
-    gmOutput  :: GMOutput,
-    gmCode    :: GMCode,
-    gmDump    :: GMDump,
-    gmStack   :: GMStack,
-    gmHeap    :: GMHeap,
-    gmGlobals :: GMGlobals,
-    gmStats   :: GMStats
-}
+data GMState = GMState
+    { gmOutput  :: GMOutput
+    , gmCode    :: GMCode
+    , gmDump    :: GMDump
+    , gmVStack  :: GMVStack
+    , gmStack   :: GMStack
+    , gmHeap    :: GMHeap
+    , gmGlobals :: GMGlobals
+    , gmStats   :: GMStats
+    }
 
 -- Simple instance for now
 instance Show GMState where
