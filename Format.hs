@@ -96,11 +96,15 @@ formatSC state (name, addr) = text name <> colon $$ nest 4 (formatCode code) whe
 
 -- Format stack and current code
 formatState :: (GMState, Int) -> Doc
-formatState (state, n) = text "State" <+> int n <> colon $$ nest 4 (formatStack state $$ formatCode (gmCode state) $$ formatDump state)
+formatState (state, n) = text "State" <+> int n <> colon $$ nest 4 (formatStack state $$ formatVStack state $$ formatCode (gmCode state) $$ formatDump state)
 
 -- Format nodes on stack
 formatStack :: GMState -> Doc
 formatStack state = text "Stack" <> colon $$ nest 4 (vcat $ map (formatNode state) (reverse (gmStack state)))
+
+-- Format numbers in V-stack
+formatVStack :: GMState -> Doc
+formatVStack state = text "V-Stack" <> colon $$ nest 4 (vcat $ map (text . show) (reverse (gmVStack state)))
 
 -- Format first n addresses on stack 
 formatShortStack :: GMStack -> Int -> Doc

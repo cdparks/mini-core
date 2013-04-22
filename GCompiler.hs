@@ -64,9 +64,9 @@ compile :: Program -> GMState
 compile program = GMState
     { gmOutput  = []
     , gmCode    = codeInit
+    , gmStack   = []
     , gmDump    = []
     , gmVStack  = []
-    , gmStack   = []
     , gmHeap    = heap
     , gmGlobals = globals
     , gmStats   = statInit

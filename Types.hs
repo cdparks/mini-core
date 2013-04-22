@@ -51,14 +51,17 @@ type GMCode = [Instruction]
 data Instruction = Pushglobal Name          -- Push address of global on stack
                  | Pushcons Name Int Int    -- Push address of wrapped constructor on stack
                  | Pushint Int              -- Push address of integer on stack
+                 | Pushbasic Int            -- Push unboxed integer on V-stack
                  | Push Int                 -- Push address of local variable on stack
                  | Pop Int                  -- Pop n items from stack
                  | Slide Int                -- Pop n items from stack leaving top-of-stack
                  | Alloc Int                -- Allocate n pointers and put addresses on stack
                  | Mkap                     -- Make application node out of top two address
+                 | Mkint                    -- Box integer on top of V-stack into heap and onto stack
+                 | Mkbool                   -- Box Boolean on top of V-stack into heap and onto stack
+                 | Get                      -- Put top-of-stack on V-stack
                  | Update Int               -- Replace root of redex with pointer to value
                  | Eval                     -- Evaluate top-of-stack to Weak Head Normal Form
-                 | Cond GMCode GMCode       -- Condition instruction
                  | Unwind                   -- Unwind application nodes onto stack
                  | Add                      -- Arithmetic instructions
                  | Sub
@@ -74,6 +77,7 @@ data Instruction = Pushglobal Name          -- Push address of global on stack
                  | Pack Int Int             -- Build NConstructor node
                  | Casejump [(Int, GMCode)] -- Use tag of node on top-of-stack to jump to case-alternative
                  | Split Int                -- Destructure constructor into components for alternative-body
+                 | Cond GMCode GMCode       -- Simplified case-jump. Check top-of-V-stack to branch
                  | Print                    -- Add value to output
                    deriving Show
 
@@ -112,9 +116,9 @@ data GMStats = GMStats
 data GMState = GMState
     { gmOutput  :: GMOutput
     , gmCode    :: GMCode
+    , gmStack   :: GMStack
     , gmDump    :: GMDump
     , gmVStack  :: GMVStack
-    , gmStack   :: GMStack
     , gmHeap    :: GMHeap
     , gmGlobals :: GMGlobals
     , gmStats   :: GMStats
