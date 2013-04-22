@@ -128,9 +128,9 @@ shorten n docs
 formatDump :: GMState -> Doc
 formatDump state = format $ gmDump state where
     format []                = empty
-    format (([], _):_)       = empty
-    format ((_, []):_)       = empty
-    format ((code, stack):_) = text "Dump" <> colon $$ nest 4 (formatShortStack stack 3 $$ formatShortCode code 3)
+    format (([], _, _):_)       = empty
+    format ((_, [], _):_)       = empty
+    format ((code, stack, vstack):_) = text "Dump" <> colon $$ nest 4 (formatShortStack stack 3 $$ formatShortCode code 3)
 
 -- Format a single node
 formatNode :: GMState -> Addr -> Doc

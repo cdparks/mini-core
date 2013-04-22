@@ -251,14 +251,15 @@ get state = state { gmStack = stack, gmVStack = x:gmVStack state } where
         (NConstructor b []) -> b
         node                -> error $ "Cannot put node " ++ show node ++ " on V-stack"
 
--- Put bottom of stack and instructions on dump.
+-- Put bottom of stack, V-stack, and instructions on dump.
 -- Leave top-of-stack as only element on stack and unwind.
--- (o, Eval : i, a : s,          d, v, h, m)
--- (o, [Unwind], [a],   (i, s) : d, v, h, m)
+-- (o, Eval : i, a : s, d,            v,  h, m)
+-- (o, [Unwind], [a],   (i, s, v : d, [], h, m)
 eval :: GMState -> GMState
-eval state =  state { gmCode = [Unwind], gmStack = [addr], gmDump = (code, stack):dump } where
+eval state =  state { gmCode = [Unwind], gmStack = [addr], gmVStack = [], gmDump = (code, stack, vstack):dump } where
     (addr:stack) = gmStack state
     code = gmCode state
+    vstack = gmVStack state
     dump = gmDump state
 
 -- Use top of stack to build next state
@@ -272,16 +273,16 @@ unwind state = newState $ hLoad heap x where
     -- (o, [Unwind], a : s, [], v, h[(a, NNum n)], m)
     -- (o, [],       a : s, [], v, h,            m)
     -- Or number on stack and not-empty dump; restore code and stack
-    -- (o, [Unwind], a : s,  (c, s') : d, v, h[(a, NNum n)], m)
-    -- (o, c,        a : s', d,           v, h,            m)
+    -- (o, [Unwind], a : s,  (c, s', v') : d, v,  h[(a, NNum n)], m)
+    -- (o, c,        a : s', d,               v', h,              m)
     newState (NNum _) = restoreDump x state
 
     -- Constructor on stack and empty dump; G-Machine is terminating.
     -- (o, [Unwind], a : s, [], v, h[(a, Constructor tar args)], m)
     -- (o, [],       a : s, [], v, h,            m)
     -- Or Constructor on stack and not-empty dump; restore code and stack
-    -- (o, [Unwind], a : s,  (c, s') : d, v, h[(a, Constructor tag args)], m)
-    -- (o, c,        a : s', d,           v, h,            m)
+    -- (o, [Unwind], a : s,  (c, s', v') : d, v,  h[(a, Constructor tag args)], m)
+    -- (o, c,        a : s', d,               v', h,                            m)
     newState (NConstructor tag args) = restoreDump x state
 
     -- Application; keep unwinding applications onto stack
@@ -305,15 +306,15 @@ unwind state = newState $ hLoad heap x where
     newState (NGlobal n code)
         | length xs >= n = state { gmCode = code,  gmStack = rearrange n heap (x:xs) }
         | otherwise      = case dump of
-            (code', stack'):dump' -> state { gmCode = code', gmStack = last (x:xs):stack' }
+            (code', stack', vstack):dump' -> state { gmCode = code', gmStack = last (x:xs):stack', gmVStack = vstack }
             _                     -> error "Unwinding with too few arguments"
 
 -- If dump is not empty, restore to machine state. Otherwise,
 -- halt execution.
 restoreDump :: Addr -> GMState -> GMState
 restoreDump addr state = case gmDump state of
-    (code, stack):dump -> state { gmCode = code, gmStack = addr:stack, gmDump = dump }
-    _                  -> state { gmCode = [] }
+    (code, stack, vstack):dump -> state { gmCode = code, gmStack = addr:stack, gmVStack = vstack, gmDump = dump }
+    _                          -> state { gmCode = [] }
 
 -- Pull n arguments directly onto the stack out of NApp nodes
 rearrange :: Int -> GMHeap -> GMStack -> GMStack
@@ -325,53 +326,19 @@ getArg :: Node -> Addr
 getArg (NApp a1 a2) = a2
 getArg _            = error "Attempted to load argument to non-application node"
 
--- Box integer as NNum node in heap and put on top-of-stack
-boxInt :: Int -> GMState -> GMState
-boxInt n state = state { gmStack = addr:stack, gmHeap = heap } where
-    (heap, addr) = hAlloc (gmHeap state) $ NNum n
-    stack = gmStack state
-
--- Load integer from heap
-unboxInt :: Addr -> GMState -> Int
-unboxInt addr state = case hLoad (gmHeap state) addr of
-    (NNum n) -> n
-    node     -> error $ "Attempted to unbox integer from " ++ show node
-
--- Box Boolean as NNum node in heap and put on top-of-stack
-boxBool :: Bool -> GMState -> GMState
-boxBool b state = state { gmStack = addr:stack, gmHeap = heap } where
-    (heap, addr) = hAlloc (gmHeap state) $ NConstructor b' []
-    stack = gmStack state
-    b' | b         = 2  -- 2 is tag for True
-       | otherwise = 1  -- 1 is tag for False
-
--- Generate a state transition performing a primitive unary operation
-primUnary :: (b -> GMState -> GMState) -- boxing function
-          -> (Addr -> GMState -> a)    -- unboxing function
-          -> (a -> b)                  -- unary operator
-          -> (GMState -> GMState)      -- state transition
-primUnary box unbox op state = box (op (unbox addr state)) state' where
-    addr:vstack = gmVStack state
-    state' = state { gmVStack = vstack }
-
--- Generate a state transition performing a primitive binary operation
-primBinary :: (b -> GMState -> GMState) -- boxing function
-          -> (Addr -> GMState -> a)    -- unboxing function
-          -> (a -> a -> b)             -- binary operator
-          -> (GMState -> GMState)      -- state transition
-primBinary box unbox op state = box (op (unbox x state) (unbox y state)) state' where
-    x:y:vstack = gmVStack state
-    state' = state { gmVStack = vstack }
-
--- Generate a state transistion performing an arithmetic unary operation
 arithUnary :: (Int -> Int) -> (GMState -> GMState)
-arithUnary = primUnary boxInt unboxInt
+arithUnary op state = state { gmVStack = vstack' } where
+    x:vstack = gmVStack state
+    vstack' = op x:vstack
 
--- Generate a state transistion performing an arithmetic binary operation
 arithBinary :: (Int -> Int -> Int) -> (GMState -> GMState)
-arithBinary = primBinary boxInt unboxInt
+arithBinary op state = state { gmVStack = vstack' } where
+    x:y:vstack = gmVStack state
+    vstack' = op x y:vstack
 
--- Generate a state transistion performing a relational binary operation
 compBinary :: (Int -> Int -> Bool) -> (GMState -> GMState)
-compBinary = primBinary boxBool unboxInt
+compBinary op state = state { gmVStack = vstack' } where
+    x:y:vstack = gmVStack state
+    vstack' | op x y    = 2:vstack  -- True tag
+            | otherwise = 1:vstack  -- False tag
 

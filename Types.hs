@@ -89,7 +89,7 @@ type GMVStack = [Int]
 
 -- Save machine's current context during
 -- strict evaluation
-type GMDump = [(GMCode, GMStack)]
+type GMDump = [(GMCode, GMStack, GMVStack)]
 
 -- Heap of live objects
 type GMHeap = Heap Node
