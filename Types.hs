@@ -105,6 +105,7 @@ data Node = NNum Int
           | NGlobal Int GMCode
           | NPointer Addr
           | NConstructor Int [Addr]
+          | NMarked Node
             deriving Show
 
 -- Global environment maps names to addresses
@@ -115,7 +116,9 @@ type GMEnvironment = [(Name, Int)]
 
 -- Tally information about machine state
 data GMStats = GMStats
-    { gmSteps :: Int }
+    { gmSteps :: Int
+    , gmCollections :: Int
+    }
 
 -- Complete machine state
 data GMState = GMState

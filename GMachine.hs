@@ -23,11 +23,18 @@ single state = state' where
     state' | isFinal state = state
            | otherwise     = doAdmin (step state)
 
--- Update machine statistics
+-- Update machine statistics. Collect garbage if heap has grown
+-- too large
 doAdmin :: GMState -> GMState
-doAdmin state = state { gmStats = stats' } where
-    stats  = gmStats state
-    stats' = stats { gmSteps = gmSteps stats + 1 }
+doAdmin state = state { gmStats = GMStats steps collections, gmHeap = heap' } where
+    heap   = gmHeap state
+    heap'  | doCollect = gc state
+           | otherwise = heap
+    doCollect = hSize heap > hMaxSize heap
+    stats = gmStats state
+    steps = gmSteps stats + 1
+    collections | doCollect = gmCollections stats + 1
+                | otherwise = gmCollections stats
 
 -- Finished when no more code to execute
 isFinal :: GMState -> Bool
@@ -326,19 +333,58 @@ getArg :: Node -> Addr
 getArg (NApp a1 a2) = a2
 getArg _            = error "Attempted to load argument to non-application node"
 
+-- Generate a state transition from a unary arithmetic function
 arithUnary :: (Int -> Int) -> (GMState -> GMState)
 arithUnary op state = state { gmVStack = vstack' } where
     x:vstack = gmVStack state
     vstack' = op x:vstack
 
+-- Generate a state transition from a binary arithmetic function
 arithBinary :: (Int -> Int -> Int) -> (GMState -> GMState)
 arithBinary op state = state { gmVStack = vstack' } where
     x:y:vstack = gmVStack state
     vstack' = op x y:vstack
 
+-- Generate a state transition from a binary comparison function
 compBinary :: (Int -> Int -> Bool) -> (GMState -> GMState)
 compBinary op state = state { gmVStack = vstack' } where
     x:y:vstack = gmVStack state
     vstack' | op x y    = 2:vstack  -- True tag
             | otherwise = 1:vstack  -- False tag
+
+-- Simple mark and scan garbage collection
+gc :: GMState -> GMHeap
+gc state = hIncreaseMax . scanHeap . foldr markFrom (gmHeap state) $ findRoots state
+
+-- Get root addresses from machine state
+findRoots :: GMState -> [Addr]
+findRoots state = dumpRoots ++ stackRoots ++ globalRoots where
+    stackRoots = gmStack state
+    globalRoots = map snd $ gmGlobals state
+    dumpRoots = concatMap (\(_, stack, _) -> stack) $ gmDump state
+
+-- Start from address and mark all nodes reachable from it
+markFrom :: Addr -> GMHeap -> GMHeap
+markFrom addr heap = case hLoad heap addr of
+    node@(NNum _) -> hUpdate heap addr $ NMarked node
+    node@(NApp a1 a2) ->
+        let heap'  = hUpdate heap addr $ NMarked node
+            heap'' = markFrom a1 heap'
+        in markFrom a2 heap''
+    node@(NGlobal _ _) -> hUpdate heap addr $ NMarked node
+    node@(NPointer a) ->
+        let heap' = hUpdate heap addr $ NMarked node
+        in markFrom a heap'
+    node@(NConstructor _ addrs) ->
+        let heap' = hUpdate heap addr $ NMarked node
+        in foldr markFrom heap' addrs
+    _ -> heap
+
+-- Scan all nodes freeing unmarked nodes and unmarking marked nodes
+scanHeap :: GMHeap -> GMHeap
+scanHeap heap = foldr scanFrom heap addresses where
+    addresses = hAddresses heap
+    scanFrom addr heap = case hLoad heap addr of
+        NMarked node -> hUpdate heap addr node
+        _            -> hFree heap addr
 

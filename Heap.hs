@@ -4,6 +4,8 @@ module Heap (
     hUpdate,
     hFree,
     hLoad,
+    hIncreaseMax,
+    hAddresses,
     hSize,
     hNull
 ) where
@@ -46,9 +48,14 @@ hLoad heap addr = case lookup addr $ hEnvironment heap of
     Just x  -> x
     Nothing -> error $ "Can't find node " ++ show addr ++ " in heap"
 
+-- Make max size double the current size
+hIncreaseMax :: Heap a -> Heap a
+hIncreaseMax heap = heap { hMaxSize = 2 * hSize heap }
+
+
 -- Get addresses of live objects
-addresses :: Heap a -> [Addr]
-addresses = map fst . hEnvironment
+hAddresses :: Heap a -> [Addr]
+hAddresses = map fst . hEnvironment
 
 -- Never points to anything
 hNull :: Addr

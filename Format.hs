@@ -87,7 +87,7 @@ formatResults :: [GMState] -> Doc
 formatResults states = text "Definitions" <> colon $$ nest 4 defs $$ text "Transitions" <> colon $$ nest 4 trans where
     defs = vcat $ map (formatSC state) $ gmGlobals state
     state:_ = states
-    trans = vcat $ map formatState (zip states [0..])
+    trans = vcat $ map formatState states
 
 -- Format a single supercombinator
 formatSC :: GMState -> (Name, Addr) -> Doc
@@ -95,8 +95,12 @@ formatSC state (name, addr) = text name <> colon $$ nest 4 (formatCode code) whe
     (NGlobal _ code) = hLoad (gmHeap state) addr
 
 -- Format stack and current code
-formatState :: (GMState, Int) -> Doc
-formatState (state, n) = text "State" <+> int n <> colon $$ nest 4 (formatStack state $$ formatVStack state $$ formatCode (gmCode state) $$ formatDump state)
+formatState :: GMState -> Doc
+formatState state = text "State" <+> parens (formatStats $ gmStats state) <> colon $$ nest 4 (formatStack state $$ formatVStack state $$ formatCode (gmCode state) $$ formatDump state)
+
+-- Format number of steps and collections
+formatStats :: GMStats -> Doc
+formatStats stats = text "step" <+> int (gmSteps stats) <> comma <+> text "gc" <+> int (gmCollections stats)
 
 -- Format nodes on stack
 formatStack :: GMState -> Doc

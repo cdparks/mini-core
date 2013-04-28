@@ -100,7 +100,7 @@ codeInit = [Pushglobal "main", Eval, Print]
 
 -- Start at step zero
 statInit :: GMStats
-statInit = GMStats 0
+statInit = GMStats 0 0
 
 -- Instantiate supercombinators in heap
 buildInitialHeap :: Program -> (GMHeap, GMGlobals)

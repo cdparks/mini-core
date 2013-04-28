@@ -37,7 +37,7 @@ start p = do
 next :: GMState -> IO GMState
 next state = do
     state' <- return (single state)
-    putStrLn $ show $ formatState (state', 0)
+    putStrLn $ show $ formatState state'
     return state'
 
 -- Parse and unparse program
