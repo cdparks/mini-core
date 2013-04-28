@@ -4,10 +4,12 @@ module Heap (
     hUpdate,
     hFree,
     hLoad,
+    hTooLarge,
     hIncreaseMax,
     hAddresses,
     hSize,
-    hNull
+    hNull,
+    isNullAddr,
 ) where
 
 import Types
@@ -16,7 +18,7 @@ import Types
 hInit :: Heap a
 hInit = Heap
     { hSize        = 0
-    , hMaxSize     = 1024
+    , hMaxSize     = 100
     , hFreeList    = [1..]
     , hEnvironment = []
     }
@@ -48,10 +50,13 @@ hLoad heap addr = case lookup addr $ hEnvironment heap of
     Just x  -> x
     Nothing -> error $ "Can't find node " ++ show addr ++ " in heap"
 
+-- Is Heap too large? Should we initiate garbage collection?
+hTooLarge :: Heap a -> Bool
+hTooLarge heap = hSize heap > hMaxSize heap
+
 -- Make max size double the current size
 hIncreaseMax :: Heap a -> Heap a
 hIncreaseMax heap = heap { hMaxSize = 2 * hSize heap }
-
 
 -- Get addresses of live objects
 hAddresses :: Heap a -> [Addr]

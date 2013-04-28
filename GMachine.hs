@@ -8,6 +8,7 @@ import Heap
 
 import Data.List
 import Debug.Trace
+import Control.Monad.State
 
 -- Move from state to state until final state is reached
 evaluate :: GMState -> [GMState]
@@ -26,15 +27,19 @@ single state = state' where
 -- Update machine statistics. Collect garbage if heap has grown
 -- too large
 doAdmin :: GMState -> GMState
-doAdmin state = state { gmStats = GMStats steps collections, gmHeap = heap' } where
-    heap   = gmHeap state
-    heap'  | doCollect = gc state
-           | otherwise = heap
-    doCollect = hSize heap > hMaxSize heap
+doAdmin state
+    | hTooLarge $ gmHeap state = incSteps $ incCollections $ gc state
+    | otherwise                = incSteps state
+
+-- Increment number of steps
+incSteps state = state { gmStats = stats' } where
     stats = gmStats state
-    steps = gmSteps stats + 1
-    collections | doCollect = gmCollections stats + 1
-                | otherwise = gmCollections stats
+    stats' = stats { gmSteps = gmSteps stats + 1 }
+
+-- Increment number of collections
+incCollections state = state { gmStats = stats' } where
+    stats = gmStats state
+    stats' = stats { gmCollections = gmCollections stats + 1 }
 
 -- Finished when no more code to execute
 isFinal :: GMState -> Bool
@@ -64,7 +69,7 @@ dispatch (Split n)        = split n
 dispatch Mkap             = mkap
 dispatch Mkint            = mkint
 dispatch Mkbool           = mkbool
-dispatch Get              = get
+dispatch Get              = get'
 dispatch Eval             = eval
 dispatch Unwind           = unwind
 dispatch Print            = print'
@@ -250,8 +255,8 @@ mkbool state = state { gmStack = addr:gmStack state, gmHeap = heap, gmVStack = v
 -- or
 -- (o, Get : i, a : s, d, v,     h[(a, NConstructor b [])], m)
 -- (o, i,       s,     d, b : v, h,                         m)
-get :: GMState -> GMState
-get state = state { gmStack = stack, gmVStack = x:gmVStack state } where
+get' :: GMState -> GMState
+get' state = state { gmStack = stack, gmVStack = x:gmVStack state } where
     addr:stack = gmStack state
     x = case hLoad (gmHeap state) addr of
         (NNum n)            -> n
@@ -352,33 +357,79 @@ compBinary op state = state { gmVStack = vstack' } where
     vstack' | op x y    = 2:vstack  -- True tag
             | otherwise = 1:vstack  -- False tag
 
+-- Garbage collection state is a function of
+-- the current heap and (usually) a machine component
+type GCState a = State GMHeap a
+
 -- Simple mark and scan garbage collection
-gc :: GMState -> GMHeap
-gc state = hIncreaseMax . scanHeap . foldr markFrom (gmHeap state) $ findRoots state
+gc :: GMState -> GMState
+gc state = state' { gmHeap = heap' } where
+    state' = evalState (mark state) $ gmHeap state
+    heap'  = hIncreaseMax $ scanHeap $ gmHeap state'
 
--- Get root addresses from machine state
-findRoots :: GMState -> [Addr]
-findRoots state = dumpRoots ++ stackRoots ++ globalRoots where
-    stackRoots = gmStack state
-    globalRoots = map snd $ gmGlobals state
-    dumpRoots = concatMap (\(_, stack, _) -> stack) $ gmDump state
+-- Walk machine state marking roots and removing indirections
+mark :: GMState -> GCState GMState
+mark state = do
+    dump    <- markFromDump    $ gmDump state
+    stack   <- markFromStack   $ gmStack state
+    globals <- markFromGlobals $ gmGlobals state
+    heap    <- get
+    return state
+        { gmHeap = heap
+        , gmDump = dump
+        , gmStack = stack
+        , gmGlobals = globals
+        }
 
--- Start from address and mark all nodes reachable from it
-markFrom :: Addr -> GMHeap -> GMHeap
-markFrom addr heap = case hLoad heap addr of
-    node@(NNum _) -> hUpdate heap addr $ NMarked node
-    node@(NApp a1 a2) ->
-        let heap'  = hUpdate heap addr $ NMarked node
-            heap'' = markFrom a1 heap'
-        in markFrom a2 heap''
-    node@(NGlobal _ _) -> hUpdate heap addr $ NMarked node
-    node@(NPointer a) ->
-        let heap' = hUpdate heap addr $ NMarked node
-        in markFrom a heap'
-    node@(NConstructor _ addrs) ->
-        let heap' = hUpdate heap addr $ NMarked node
-        in foldr markFrom heap' addrs
-    _ -> heap
+-- Mark all root addresses in dump's stack component
+markFromDump :: GMDump -> GCState GMDump
+markFromDump = mapM $ \(code, stack, vstack) -> do
+    stack' <- markFromStack stack
+    return (code, stack', vstack)
+
+-- Mark all root addresses in stack
+markFromStack :: GMStack -> GCState GMStack
+markFromStack = mapM markFrom
+
+-- Mark all root addresses in globals
+markFromGlobals :: GMGlobals -> GCState GMGlobals
+markFromGlobals = mapM $ \(name, addr) -> do
+    addr' <- markFrom addr
+    return (name, addr')
+
+-- Start from address and mark all reachable addresses from it. Replace any
+-- pointer nodes by what they point to.
+markFrom :: Addr -> GCState Addr
+markFrom addr = do
+    heap <- get
+    case hLoad heap addr of
+        node@(NNum _) -> do
+            modify $ \s -> hUpdate s addr $ NMarked node
+            return addr
+        node@(NApp a1 a2) -> do
+            -- Visit this node to avoid looping
+            modify $ \s -> hUpdate s addr $ NMarked node
+            a1' <- markFrom a1
+            a2' <- markFrom a2
+            -- Update addresses that may have changed
+            modify $ \s -> hUpdate s addr $ NMarked $ NApp a1' a2'
+            return addr
+        node@(NGlobal _ _) -> do
+            modify $ \s -> hUpdate heap addr $ NMarked node
+            return addr
+        node@(NPointer a)
+            | isNullAddr a -> do
+                modify $ \s -> hUpdate heap addr $ NMarked node
+                return addr
+            | otherwise    -> markFrom a
+        node@(NConstructor tag addrs) -> do
+            -- Visit this node to avoid looping
+            modify $ \s -> hUpdate s addr $ NMarked node
+            addrs' <- mapM markFrom addrs
+            -- Update addresses that may have changed
+            modify $ \s -> hUpdate s addr $ NMarked $ NConstructor tag addrs'
+            return addr
+        node -> return addr
 
 -- Scan all nodes freeing unmarked nodes and unmarking marked nodes
 scanHeap :: GMHeap -> GMHeap
