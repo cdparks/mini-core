@@ -37,8 +37,13 @@ precByOp = [ ("||", 2) -- Boolean OR
 
 type Addr = Int
 
--- (size, free-list, environment mapping addresses to live objects)
-type Heap a = (Int, [Addr], [(Addr, a)])
+-- (size, max-size, free-list, environment mapping addresses to live objects)
+data Heap a = Heap
+    { hSize        :: Int
+    , hMaxSize     :: Int
+    , hFreeList    :: [Addr]
+    , hEnvironment :: [(Addr, a)]
+    }
 
 {- G-Compiler/Machine types -}
 

@@ -12,34 +12,43 @@ import Types
 
 -- Initial heap with an unbounded free-list and empty environment
 hInit :: Heap a
-hInit = (0, [1..], [])
+hInit = Heap
+    { hSize        = 0
+    , hMaxSize     = 1024
+    , hFreeList    = [1..]
+    , hEnvironment = []
+    }
 
 -- Remove address from beginning of free-list,
 -- attach object to live environment, and increment size
 hAlloc :: Heap a -> a -> (Heap a, Addr)
-hAlloc (size, (next:free), env) x = ((size + 1, free, (next, x):env), next)
+hAlloc heap x = (heap', addr) where
+    addr:free = hFreeList heap
+    heap' = heap { hSize        = hSize heap + 1
+                 , hFreeList    = free
+                 , hEnvironment = (addr, x):hEnvironment heap
+                 }
 
 -- Replace current node at address with new object
 hUpdate :: Heap a -> Addr -> a -> Heap a
-hUpdate (size, free, env) addr x = (size, free, (addr, x):remove env addr)
+hUpdate heap addr x = heap { hEnvironment = (addr, x):remove (hEnvironment heap) addr }
 
 -- Remove object from live environment, and return address to free-list
 hFree :: Heap a -> Addr -> Heap a
-hFree (size, free, env) addr = (size - 1, addr:free, remove env addr)
+hFree heap addr = heap { hSize        = hSize heap - 1
+                       , hFreeList    = addr:hFreeList heap
+                       , hEnvironment = remove (hEnvironment heap) addr
+                       }
 
 -- Dereference address and return object
 hLoad :: Heap a -> Addr -> a
-hLoad (_, _, env) addr = case lookup addr env of
+hLoad heap addr = case lookup addr $ hEnvironment heap of
     Just x  -> x
     Nothing -> error $ "Can't find node " ++ show addr ++ " in heap"
 
 -- Get addresses of live objects
 addresses :: Heap a -> [Addr]
-addresses (_, _, env) = map fst env
-
--- Get number of live objects
-hSize :: Heap a -> Int
-hSize (size, _, _) = size
+addresses = map fst . hEnvironment
 
 -- Never points to anything
 hNull :: Addr
