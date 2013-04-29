@@ -138,8 +138,8 @@ compileR env e = compileE env e ++ [Update n, Pop n, Unwind] where
 compileE :: GMCompiler
 compileE env (Num n) = [Pushint n]
 compileE env (Let recursive defs body)
-    | recursive = compileLetrec compileE env defs body
-    | otherwise = compileLet    compileE env defs body
+    | recursive = compileLetrec compileE env defs body ++ [Slide (length defs)]
+    | otherwise = compileLet    compileE env defs body ++ [Slide (length defs)]
 compileE env e@(App (Var op) _) = case lookup op unaryOpBox of
     Just instruction -> compileB env e ++ [instruction]
     Nothing          -> compileC env e ++ [Eval]
@@ -165,8 +165,8 @@ compileA comp offset env expr = [Split offset] ++ comp env expr ++ [Slide offset
 compileB :: GMCompiler
 compileB env (Num n) = [Pushbasic n]
 compileB env (Let recursive defs body)
-    | recursive = compileLetrec compileB env defs body
-    | otherwise = compileLet    compileB env defs body
+    | recursive = compileLetrec compileB env defs body ++ [Pop (length defs)]
+    | otherwise = compileLet    compileB env defs body ++ [Pop (length defs)]
 compileB env e@(App (Var op) e1) = case lookup op unaryOpImpl of
     Just instruction -> compileB env e1 ++ [instruction]
     Nothing          -> compileE env e ++ [Get]
@@ -188,14 +188,14 @@ compileC env (App e1 e2) = compileC env e2 ++ compileC (argOffset 1 env) e1 ++ [
 compileC env (Cons tag arity) = replicate arity (Push $ arity - 1) ++ [Pack tag arity]
 compileC env (Case e alts) = compileE env e ++ [Casejump $ compileD env compileE alts]
 compileC env (Let recursive defs body)
-    | recursive = compileLetrec compileC env defs body
-    | otherwise = compileLet    compileC env defs body
+    | recursive = compileLetrec compileC env defs body ++ [Slide $ length defs]
+    | otherwise = compileLet    compileC env defs body ++ [Slide $ length defs]
 compileC env x = error $ "no pattern for " ++ show x ++ "?!"
 
 -- Generate code to construct each let binding and the let body.
 -- Code must remove bindings after body is evaluated.
 compileLet :: GMCompiler -> GMEnvironment -> [(Name, Expr)] -> Expr -> GMCode
-compileLet comp env defs body = compileDefs env defs ++ comp env' body ++ [Slide (length defs)] where
+compileLet comp env defs body = compileDefs env defs ++ comp env' body where
     env' = compileArgs env defs
 
 -- Generate code to construct each definition in defs
@@ -207,7 +207,7 @@ compileDefs env ((name, expr):defs) = compileC env expr ++ compileDefs (argOffse
 -- Code must remove bindings after body is evaluated.
 -- Bindings start as null pointers and must update themselves on evaluation.
 compileLetrec :: GMCompiler -> GMEnvironment -> [(Name, Expr)] -> Expr -> GMCode
-compileLetrec comp env defs body = [Alloc n] ++ compileRecDefs (n - 1) env' defs ++ comp env' body ++ [Slide n] where
+compileLetrec comp env defs body = [Alloc n] ++ compileRecDefs (n - 1) env' defs ++ comp env' body where
     env' = compileArgs env defs
     n = length defs
 
@@ -215,7 +215,7 @@ compileLetrec comp env defs body = [Alloc n] ++ compileRecDefs (n - 1) env' defs
 -- update pointer on stack.
 compileRecDefs :: Int -> GMEnvironment -> [(Name, Expr)] -> GMCode
 compileRecDefs n env []                  = []
-compileRecDefs n env ((name, expr):defs) = compileC env expr ++ [Update n] ++ compileRecDefs (n - 1) (argOffset 1 env) defs
+compileRecDefs n env ((name, expr):defs) = compileC env expr ++ [Update n] ++ compileRecDefs (n - 1) env defs
 
 -- Generate stack offsets for local bindings
 compileArgs :: GMEnvironment -> [(Name, Expr)] -> GMEnvironment
