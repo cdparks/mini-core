@@ -1,6 +1,7 @@
 module GMachine (
     evaluate,
-    single
+    single,
+    isFinal
 ) where
 
 import Types

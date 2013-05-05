@@ -7,6 +7,9 @@ module Format (
     formatLast,
     formatState,
     formatResults,
+    formatFirstStep,
+    formatLastStep,
+    formatStep,
     precByOp
 ) where
 
@@ -80,14 +83,37 @@ formatAlts prec alts = vcat (punctuate semi (map formatAlt alts)) where
 
 -- Print output from last state
 formatLast :: [GMState] -> Doc
-formatLast = text . show . (intercalate " ") . reverse . gmOutput . last
+formatLast = text . intercalate " " . reverse . gmOutput . last
 
--- Format output
+-- Format global definitions, all states, and final output
 formatResults :: [GMState] -> Doc
-formatResults states = text "Definitions" <> colon $$ nest 4 defs $$ text "Transitions" <> colon $$ nest 4 trans where
+formatResults states = formatDefs states $$ formatTransitions states $$ formatOutput states
+
+-- Format first step for incremental output
+formatFirstStep :: GMState -> Doc
+formatFirstStep state = formatDefs [state]
+
+-- Format intermediate step
+formatStep :: GMState -> Doc
+formatStep = formatState
+
+-- Format last step for incremental output
+formatLastStep :: GMState -> Doc
+formatLastStep state = formatLast [state]
+
+-- Format global definitions
+formatDefs :: [GMState] -> Doc
+formatDefs (state:_) = text "Definitions" <> colon $$ nest 4 defs where
     defs = vcat $ map (formatSC state) $ gmGlobals state
-    state:_ = states
+
+-- Format each transition
+formatTransitions :: [GMState] -> Doc
+formatTransitions states = text "Transitions" <> colon $$ nest 4 trans where
     trans = vcat $ map formatState states
+
+-- Format final ouput
+formatOutput :: [GMState] -> Doc
+formatOutput states = text "Output" <> colon <+> formatLast states
 
 -- Format a single supercombinator
 formatSC :: GMState -> (Name, Addr) -> Doc
