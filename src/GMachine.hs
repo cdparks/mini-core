@@ -55,7 +55,6 @@ step state = dispatch x state' where
 -- Dispatch from instruction to implementation
 dispatch :: Instruction -> GMState -> GMState
 dispatch (Pushglobal f)   = pushglobal f
-dispatch (Pushcons f t n) = pushcons f t n
 dispatch (Pushint n)      = pushint n
 dispatch (Pushbasic n)    = pushbasic n
 dispatch (Push n)         = push n
@@ -95,14 +94,6 @@ pushglobal f state = state { gmStack = addr:gmStack state } where
     addr = case lookup f (gmGlobals state) of
         Just x  -> x
         Nothing -> error ("Undeclared global " ++ f)
-
--- Find global node for constructor by name or add to globals
-pushcons :: Name -> Int -> Int -> GMState -> GMState
-pushcons name tag arity state = case lookup name (gmGlobals state) of
-    Just addr -> state { gmStack = addr:gmStack state }
-    Nothing   -> state { gmStack = addr:gmStack state, gmHeap = heap, gmGlobals = globals } where
-        (heap, addr) = hAlloc (gmHeap state) $ NGlobal arity [Pack tag arity, Update 0, Unwind]
-        globals = (name, addr):gmGlobals state
 
 -- Allocate number in heap and push on stack
 -- (o, Pushint n : i, s,     d, v, h,              m)

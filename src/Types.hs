@@ -54,7 +54,6 @@ type GMOutput = [String]
 type GMCode = [Instruction]
 
 data Instruction = Pushglobal Name          -- Push address of global on stack
-                 | Pushcons Name Int Int    -- Push address of wrapped constructor on stack
                  | Pushint Int              -- Push address of integer on stack
                  | Pushbasic Int            -- Push unboxed integer on V-stack
                  | Push Int                 -- Push address of local variable on stack
