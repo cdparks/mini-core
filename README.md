@@ -31,3 +31,6 @@ A program is just a sequence of supercombinators. Execution proceeds by reducing
     -- Print the first 10 elements of an inifinite list
     main = take 10 (infinite 0)
 
+## Warning
+At the moment, mini-core is practically untyped, so it will let you attempt to do <i>silly things</i>.
+
