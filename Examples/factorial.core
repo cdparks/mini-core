@@ -1,0 +1,10 @@
+-- Factorial function
+
+factorial n = loop 1 n;
+
+loop acc x = if (x < 2)
+                 acc 
+                (loop (x * acc) (x - 1));
+
+main = factorial 10
+

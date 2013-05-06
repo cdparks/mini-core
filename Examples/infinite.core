@@ -1,0 +1,24 @@
+-- Take 10 elements from the front of an infinite list
+
+Cons x xs = Pack{3, 2} x xs;
+
+Nil = Pack{4, 0};
+
+abort = 1 / 0;
+
+infinite x = Cons x (infinite (x + 1));
+
+head ls = case ls of
+    <3> x xs -> x;
+    <4>      -> abort;
+
+tail ls = case ls of
+    <3> x xs -> xs;
+    <4>      -> abort;
+
+take n ls = if (n <= 0) Nil (case ls of
+        <3> x xs -> Cons x (take (n - 1) xs);
+        <4>      -> Nil);
+
+main = take 10 (infinite 0)
+

@@ -1,0 +1,7 @@
+-- Simple arithmetic example
+
+double x = 2 * x;
+square x = x * x;
+
+main = compose double square 10
+
