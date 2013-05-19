@@ -1,0 +1,14 @@
+-- Map cube across list of numbers
+
+Cons x xs = Pack{3, 2} x xs;
+
+Nil = Pack{4, 0};
+
+map f ls = case ls of
+    <3> x xs -> Cons (f x) (map f xs);
+    <4>      -> Nil;
+
+list = Cons 1 (Cons 3 (Cons 5 (Cons 7 Nil)));
+
+main = map (\x -> x * x * x) list
+
