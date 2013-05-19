@@ -60,13 +60,13 @@ formatPrec prec (App e1 e2) = wrap expr where
     wrap | prec == applyPrec = parens
          | otherwise         = id
 formatPrec _ (Let recursive bindings body) =
-    text keyword <+> nest indent (formatBindings lowestPrec bindings) $$ text "in" <+> format lowestPrec body
+    text keyword <+> nest indent (formatBindings lowestPrec bindings) $$ text "in" <+> formatPrec lowestPrec body
         where indent  = length keyword + 1
               keyword | recursive = "letrec"
                       | otherwise = "let"
-format _ (Case scrutinee alts) =
+formatPrec _ (Case scrutinee alts) =
     text "case" <+> formatPrec lowestPrec scrutinee <+> text "of" $$ nest 5 (formatAlts lowestPrec alts)
-format _ (Lambda args body) =
+formatPrec _ (Lambda args body) =
     parens $ text "\\" <> sep (map text args) <+> text "->" <+> formatPrec lowestPrec body
 
 -- Format name = expression pairs
