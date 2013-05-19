@@ -6,6 +6,7 @@ test: mini-core
 	bin/mini-core examples/fixedpoint.core | diff tests/fixedpoint.out -
 	bin/mini-core examples/map.core        | diff tests/map.out -
 	bin/mini-core examples/fold.core       | diff tests/fold.out -
+	bin/mini-core examples/freevar.core    | diff tests/freevar.out -
 
 mini-core: src/*.hs
 	cabal configure
@@ -21,6 +22,7 @@ update: mini-core
 	bin/mini-core examples/fixedpoint.core > tests/fixedpoint.out
 	bin/mini-core examples/map.core        > tests/map.out
 	bin/mini-core examples/fold.core       > tests/fold.out
+	bin/mini-core examples/freevar.core    > tests/freevar.out
 
 loud: mini-core
 	bin/mini-core examples/arithmetic.core
@@ -30,6 +32,7 @@ loud: mini-core
 	bin/mini-core examples/fixedpoint.core
 	bin/mini-core examples/map.core
 	bin/mini-core examples/fold.core
+	bin/mini-core examples/freevar.core
 
 clean:
 	cabal clean

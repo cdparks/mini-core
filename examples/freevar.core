@@ -1,0 +1,6 @@
+f x = let g = \y -> \z -> x + y + z;
+          m = 9
+      in g m;
+
+main = f 12 4
+

@@ -310,7 +310,7 @@ unwind state = newState $ hLoad heap x where
     newState (NGlobal n code)
         | length xs >= n = state { gmCode = code,  gmStack = rearrange n heap (x:xs) }
         | otherwise      = case dump of
-            (code', stack', vstack):dump' -> state { gmCode = code', gmStack = last (x:xs):stack', gmVStack = vstack }
+            (code', stack', vstack):dump' -> state { gmCode = code', gmStack = last (x:xs):stack', gmVStack = vstack, gmDump = dump' }
             _                     -> error "Unwinding with too few arguments"
 
 -- If dump is not empty, restore to machine state. Otherwise,
