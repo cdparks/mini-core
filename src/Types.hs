@@ -1,7 +1,6 @@
 module Types where
 
 {- Core Expression types -}
-
 data Expr = Var Name
           | Num Int
           | Cons Int Int
@@ -16,6 +15,13 @@ type IsRec      = Bool
 type Alt        = (Int, [Name], Expr)
 type Combinator = (Name, [Name], Expr)
 type Program    = [Combinator]
+
+-- Get binders and bindees
+bindersOf :: [(a, b)] -> [a]
+bindersOf = map fst
+
+bindeesOf :: [(a, b)] -> [b]
+bindeesOf = map snd
 
 -- Map binary ops to precedence
 precByOp :: [(Name, Int)]
@@ -32,6 +38,25 @@ precByOp = [ ("||", 2) -- Boolean OR
            , ("*",  7)
            , ("/",  7)
            ]
+
+{- Annotated Expression types -}
+
+--An AExpr is an expression annotated with some extra useful
+--information. a is the type of binders in expressions, and b
+--is the type of annotations.
+data AExpr a b = AVar Name
+               | ANum Int
+               | ACons Int Int
+               | AApp (Annotated a b) (Annotated a b)
+               | ALet IsRec [ADef a b] (Annotated a b)
+               | ACase (Annotated a b) [AAlt a b]
+               | ALambda [a] (Annotated a b)
+                 deriving (Show)
+
+type Annotated a b = (b, AExpr a b)
+type ADef a b      = (a, Annotated a b)
+type AAlt a b      = (Int, [a], (Annotated a b))
+type AProgram a b  = [(Name, [a], Annotated a b)]
 
 {- Heap types -}
 
