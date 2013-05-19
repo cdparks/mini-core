@@ -29,6 +29,10 @@ startStep program = do
     putStrLn $ show $ formatFirstStep state
     step state
 
+-- Just print program after transformations
+transformed :: String -> String
+transformed = show . formatProgram . transform . parseCore
+
 -- Step from one state to the next 
 step :: GMState -> IO ()
 step state = do
@@ -52,6 +56,7 @@ ask state = do
 data Flag = Normal
           | Step
           | Verbose
+          | Transform
             deriving Show
 
 -- Context is file to execute and execution flag
@@ -68,6 +73,9 @@ options = [ Option ['v'] ["verbose"]
           , Option ['s'] ["step"]
                 (NoArg $ return . const Step)
                 "Single-step through program execution (n -> next, q -> quit)"
+          , Option ['t'] ["transform"]
+                (NoArg $ return . const Transform)
+                "Just show program after constructor and lambda lifting"
           , Option ['h'] ["help"]
                 (NoArg . const $ usage [])
                 "Print usage and exit"
@@ -103,7 +111,8 @@ main = do
     Context { sFlag = flag, sFile = file } <- getContext
     program <- readFile file
     case flag of
-        Normal   -> putStrLn $ run program
-        Verbose  -> putStrLn $ debug program
-        Step     -> startStep program
+        Normal    -> putStrLn $ run program
+        Verbose   -> putStrLn $ debug program
+        Transform -> putStrLn $ transformed program
+        Step      -> startStep program
 
