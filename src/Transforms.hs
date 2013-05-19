@@ -104,9 +104,10 @@ freeVars = map $ \(name, args, body) -> (name, args, walk (Set.fromList args) bo
     walk vars (Var v)
         | v `Set.member` vars = (Set.singleton v, AVar v)
         | otherwise           = (Set.empty, AVar v)
-    walk vars (App e1 e2) = (freeVarsOf e1' `Set.union` freeVarsOf e2', AApp e1' e2') where
+    walk vars (App e1 e2) = (vars', AApp e1' e2') where
         e1' = walk vars e1
         e2' = walk vars e2
+        vars' = freeVarsOf e1' `Set.union` freeVarsOf e2'
     walk vars (Lambda args body) = (vars', ALambda args body') where
         argSet = Set.fromList args
         body' = walk (vars `Set.union` argSet) body
@@ -114,8 +115,7 @@ freeVars = map $ \(name, args, body) -> (name, args, walk (Set.fromList args) bo
     walk vars (Case expr alts) = (vars', ACase expr' alts') where
         expr' = walk vars expr
         alts' = map (walkAlt vars) alts
-        getRhs (_, _, rhs) = rhs
-        vars' = freeVarsOf expr' `Set.union` (flattenSet $ map (freeVarsOf . getRhs) alts')
+        vars' = freeVarsOf expr' `Set.union` (flattenSet $ map freeVarsOfAlt alts')
     walk vars (Let recursive defs body) = (vars', ALet recursive defs' body') where
         binders = bindersOf defs
         binderSet = Set.fromList binders
@@ -133,6 +133,9 @@ freeVars = map $ \(name, args, body) -> (name, args, walk (Set.fromList args) bo
 
     flattenSet :: Ord a => [Set.Set a] -> Set.Set a
     flattenSet = foldl Set.union Set.empty
+
+    freeVarsOfAlt :: AAlt Name (Set.Set Name) -> Set.Set Name
+    freeVarsOfAlt (tag, args, rhs) = freeVarsOf rhs `Set.difference` Set.fromList args
 
     walkAlt :: Set.Set Name -> Alt -> AAlt Name (Set.Set Name)
     walkAlt vars (tag, args, rhs) = (tag, args, rhs') where
@@ -242,7 +245,9 @@ collectCombinators = concatMap $ \c -> execState (collectCombinator c) [] where
         let bindings    = [(name, rhs) | (name, rhs) <- defs', not $ isLambda rhs]
         let lifted      = [(name, args, body) | (name, Lambda args body) <- combinators]
         modify $ \cs -> lifted ++ cs
-        return $ Let recursive bindings body'
+        case bindings of
+            [] -> return body'
+            _  -> return $ Let recursive bindings body'
 
     walkDef :: (Name, Expr) -> State [Combinator] (Name, Expr)
     walkDef (name, expr) = do
