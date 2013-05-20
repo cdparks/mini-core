@@ -18,11 +18,11 @@ A program is just a sequence of supercombinators. Execution proceeds by reducing
 Cons a b = Pack{3, 2} a b; -- Cons uses the tag 3 and has 2 components
 Nil      = Pack{4, 0};     -- Nil uses the tag 4 and has 0 components
 
--- mini-core is non-strict; we can construct inifinite data structures
+-- mini-core is non-strict; we can construct infinite data structures
 infinite x = Cons x (infinite (x + 1));
 
 -- Case expressions make a multi-way branch based on the scrutinee's
--- tag and bind its components to the names preceeding the arrow
+-- tag and bind its components to the names preceding the arrow
 take n ls = if (n <= 0)
                 Nil
                 (case ls of
@@ -33,7 +33,7 @@ map f ls = case ls of
     <3> x xs -> Cons (f x) (map f xs);
     <4>      -> Nil;
 
--- Print the squares of the first 10 elements of an inifinite list
+-- Print the squares of the first 10 elements of an infinite list
 -- (Now with lambdas!)
 main = map (\x -> x * x) (take 10 (infinite 0))
 ```
