@@ -111,7 +111,7 @@ formatTransitions :: [GMState] -> Doc
 formatTransitions states = text "Transitions" <> colon $$ nest 4 trans where
     trans = vcat $ map formatState states
 
--- Format final ouput
+-- Format final output
 formatOutput :: [GMState] -> Doc
 formatOutput states = text "Output" <> colon <+> formatLast states
 
