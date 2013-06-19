@@ -7,6 +7,12 @@ import MiniCore.Types
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import Control.Monad.State
+import Data.List (partition)
+
+-- Lift lambdas to top level as supercombinators and turn free variables into
+-- extra formal parameters
+liftLambdas :: Program -> Program
+liftLambdas = collectCombinators . rename . abstract . freeVars
 
 -- Wrap an integer used to generate new names
 data NameSupply = NameSupply { suffix :: Int }
@@ -17,11 +23,6 @@ fresh = do
     n <- gets suffix
     modify $ \s -> s { suffix = n + 1 }
     return $ "$" ++ show n
-
--- Lift lambdas to top level as supercombinators and turn free variables into
--- extra formal parameters
-liftLambdas :: Program -> Program
-liftLambdas = collectCombinators . rename . abstract . freeVars
 
 -- Walk program and return a new AST annotated with each node's free variables
 freeVars :: Program -> AProgram Name (Set.Set Name)
@@ -169,9 +170,8 @@ collectCombinators = concatMap $ \c -> execState (collectCombinator c) [] where
     walk (Let recursive defs body) = do
         defs' <- mapM walkDef defs
         body' <- walk body
-        let combinators = [(name, rhs) | (name, rhs) <- defs', isLambda rhs]
-        let bindings    = [(name, rhs) | (name, rhs) <- defs', not $ isLambda rhs]
-        let lifted      = [(name, args, body) | (name, Lambda args body) <- combinators]
+        let (combinators, bindings) = partition (isLambda . snd) defs'
+            lifted                  = map toCombinator combinators
         modify $ \cs -> lifted ++ cs
         case bindings of
             [] -> return body'
@@ -190,4 +190,7 @@ collectCombinators = concatMap $ \c -> execState (collectCombinator c) [] where
     isLambda :: Expr -> Bool
     isLambda (Lambda _ _) = True
     isLambda _            = False
+
+    toCombinator :: (Name, Expr) -> Combinator
+    toCombinator (name, Lambda args body) = (name, args, body)
 
