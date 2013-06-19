@@ -1,8 +1,8 @@
-module Parse (
+module MiniCore.Parse (
     parseCore
 ) where
 
-import Types
+import MiniCore.Types
 
 import Text.ParserCombinators.Parsec
 import Text.ParserCombinators.Parsec.Expr

@@ -1,6 +1,6 @@
 {-# LANGUAGE OverlappingInstances, TypeSynonymInstances, FlexibleInstances #-}
 
-module Format (
+module MiniCore.Format (
     formatExpr,
     formatCombinator,
     formatProgram,
@@ -13,8 +13,8 @@ module Format (
     precByOp
 ) where
 
-import Types
-import Heap
+import MiniCore.Types
+import MiniCore.Heap
 
 import Text.PrettyPrint
 import Data.List

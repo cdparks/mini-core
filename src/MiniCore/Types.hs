@@ -1,4 +1,4 @@
-module Types where
+module MiniCore.Types where
 
 {- Core Expression types -}
 data Expr = Var Name

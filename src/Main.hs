@@ -1,11 +1,11 @@
 module Main where
 
-import Types
-import Parse
-import Transforms
-import GCompiler
-import GMachine
-import Format
+import MiniCore.Types
+import MiniCore.Parse
+import MiniCore.Transforms
+import MiniCore.GCompiler
+import MiniCore.GMachine
+import MiniCore.Format
 
 import System.IO
 import System.Console.GetOpt

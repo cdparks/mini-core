@@ -1,11 +1,11 @@
-module GMachine (
+module MiniCore.GMachine (
     evaluate,
     single,
     isFinal
 ) where
 
-import Types
-import Heap
+import MiniCore.Types
+import MiniCore.Heap
 
 import Data.List
 import Debug.Trace

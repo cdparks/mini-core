@@ -1,9 +1,9 @@
-module GCompiler (
+module MiniCore.GCompiler (
     compile
 ) where
 
-import Types
-import Heap
+import MiniCore.Types
+import MiniCore.Heap
 
 import Data.List
 import Control.Arrow hiding ((<+>))

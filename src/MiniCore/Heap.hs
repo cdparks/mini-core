@@ -1,4 +1,4 @@
-module Heap (
+module MiniCore.Heap (
     hInit,
     hAlloc,
     hUpdate,
@@ -12,7 +12,7 @@ module Heap (
     isNullAddr,
 ) where
 
-import Types
+import MiniCore.Types
 
 -- Initial heap with an unbounded free-list and empty environment
 hInit :: Heap a
