@@ -6,15 +6,17 @@ data Expr = Var Name
           | Cons Int Int
           | App Expr Expr
           | Let IsRec [(Name, Expr)] Expr
-          | Case Expr [Alt]
+          | ConCase Expr [Alt Name]
+          | TagCase Expr [Alt Int]
           | Lambda [Name] Expr
             deriving (Show)
 
 type Name       = String
 type IsRec      = Bool
-type Alt        = (Int, [Name], Expr)
 type Combinator = (Name, [Name], Expr)
 type Program    = [Combinator]
+
+type Alt a      = (a, [Name], Expr)
 
 type Constructor = (Name, [Name])
 type DataSpec = (Name, [Constructor])

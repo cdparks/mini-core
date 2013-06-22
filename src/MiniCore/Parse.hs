@@ -23,6 +23,7 @@ languageDef =
                                        , "in"
                                        , "of"
                                        , "Pack"
+                                       , "_"
                                        ]
              , Token.reservedOpNames = "|":"\\":"=":"->":(map fst precByOp)
              }
@@ -36,8 +37,6 @@ parens     = Token.parens     lexer
 braces     = Token.braces     lexer
 angles     = Token.angles     lexer
 natural    = Token.natural    lexer
-semiSep1   = Token.semiSep1   lexer
-semiSep    = Token.semiSep    lexer
 semi       = Token.semi       lexer
 comma      = Token.comma      lexer
 whiteSpace = Token.whiteSpace lexer
@@ -51,9 +50,9 @@ parseCore s =
 -- Program -> DataType;* Combinator [; Combinator]*
 pCore :: Parser ([DataSpec], Program)
 pCore = do whiteSpace
-           dataSpecs <- semiSep pDataSpec
-           program <- semiSep1 pCombinator
-           return $ (dataSpecs, program)
+           dataSpecs <- many pDataSpec
+           program <- pCombinator `sepEndBy1` semi
+           eof >> return (dataSpecs, program)
 
 -- DataSpec-> data name = Constructor [| Constructor]*;
 pDataSpec :: Parser DataSpec
@@ -61,14 +60,13 @@ pDataSpec = do reserved "data"
                name <- uppercased
                reservedOp "="
                constructors <- sepBy1 pConstructor $ reservedOp "|"
-               semi
-               return $ (name, constructors)
+               semi >> return (name, constructors)
 
 -- Constructor -> name [ args]*
 pConstructor :: Parser Constructor
 pConstructor = do name <- uppercased
                   components <- many identifier
-                  return $ (name, components)
+                  return (name, components)
 
 -- Combinator -> var [ args]* = Expr
 pCombinator :: Parser Combinator
@@ -83,8 +81,7 @@ uppercased :: Parser Name
 uppercased = do whiteSpace
                 first <- upper
                 rest <- many $ alphaNum <|> char '_' <|> char '\''
-                whiteSpace
-                return $ first:rest
+                whiteSpace >> return (first:rest)
 
 -- Atom -> Let | BinOp | Case | Lambda 
 pExpr :: Parser Expr
@@ -98,35 +95,37 @@ pExpr =   pLet
 pLet :: Parser Expr
 pLet = do isRec <-  (reserved "let"    >> return False)
                 <|> (reserved "letrec" >> return True)
-          bindings <- pBindings
+          bindings <- braces $ pBinding `sepEndBy1` semi
           reserved "in"
           expr <- pExpr
           return $ Let isRec bindings expr
 
--- Bindings -> var = Expr [; var = Expr]*
-pBindings :: Parser [(Name, Expr)]
-pBindings = semiSep1 $
-    do name <- identifier
-       reservedOp "="
-       expr <- pExpr
-       return (name, expr)
+-- Binding -> var = Expr
+pBinding :: Parser (Name, Expr)
+pBinding = do name <- identifier
+              reservedOp "="
+              expr <- pExpr
+              return (name, expr)
 
 -- Case -> case Expr of Alts
 pCase :: Parser Expr
 pCase = do reserved "case"
            expr <- pExpr
            reserved "of"
-           alts <- pAlts
-           return $ Case expr alts
+           alts <- braces $ pAlt `sepEndBy1` semi
+           return $ ConCase expr alts
 
 -- Alts -> <tag> arg* -> Expr [; <tag> arg* -> Expr]*
-pAlts :: Parser [Alt]
-pAlts = do tag <- angles natural
-           args <- many identifier
-           reservedOp "->"
-           expr <- pExpr
-           rest <- try (semi >> pAlts) <|> return []
-           return $ (fromInteger tag, args, expr):rest
+-- Alts -> Wild | Constructor -> Expr [; Constructor -> expr]*
+pAlt :: Parser (Alt Name)
+pAlt = do (name, components) <- pWild <|> pConstructor
+          reservedOp "->"
+          expr <- pExpr
+          return $ (name, components, expr)
+
+pWild :: Parser Constructor
+pWild = do reserved "_"
+           return $ ("_", [])
 
 -- Lambda -> \var+ -> Expr
 pLambda :: Parser Expr
@@ -169,10 +168,11 @@ pApp = many1 pAtom >>= return . makeSpine where
 pAtom :: Parser Expr
 pAtom =   (identifier >>= return . Var)
       <|> (natural >>= return . Num . fromInteger)
-      <|> pPack
+      -- <|> pPack
       <|> parens pExpr
       <?> "identifier, number, pack, or parenthesized expression"
 
+{-
 -- Pack -> Pack { tag , arity }
 pPack :: Parser Expr
 pPack = do reserved "Pack"
@@ -182,4 +182,5 @@ pPack = do reserved "Pack"
                            comma
                            arity <- natural
                            return (tag, arity)
+-}
 
