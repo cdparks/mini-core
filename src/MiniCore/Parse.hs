@@ -16,14 +16,15 @@ languageDef =
              , Token.commentLine     = "--"
              , Token.identStart      = letter
              , Token.identLetter     = alphaNum <|> char '_' <|> char '\''
-             , Token.reservedNames   = [ "let"
+             , Token.reservedNames   = [ "data"
+                                       , "let"
                                        , "letrec"
                                        , "case"
                                        , "in"
                                        , "of"
                                        , "Pack"
                                        ]
-             , Token.reservedOpNames = "\\":"=":"->":(map fst precByOp)
+             , Token.reservedOpNames = "|":"\\":"=":"->":(map fst precByOp)
              }
 
 -- Generate lexer and bind names that we'll use
@@ -36,19 +37,38 @@ braces     = Token.braces     lexer
 angles     = Token.angles     lexer
 natural    = Token.natural    lexer
 semiSep1   = Token.semiSep1   lexer
+semiSep    = Token.semiSep    lexer
 semi       = Token.semi       lexer
 comma      = Token.comma      lexer
 whiteSpace = Token.whiteSpace lexer
 
-parseCore :: String -> Program
+parseCore :: String -> ([DataSpec], Program)
 parseCore s =
     case parse pCore "core" s of
         Left e  -> error $ show e
         Right r -> r
 
--- Program -> Combinator [; Combinator]*
-pCore :: Parser Program
-pCore = whiteSpace >> semiSep1 pCombinator
+-- Program -> DataType;* Combinator [; Combinator]*
+pCore :: Parser ([DataSpec], Program)
+pCore = do whiteSpace
+           dataSpecs <- semiSep pDataSpec
+           program <- semiSep1 pCombinator
+           return $ (dataSpecs, program)
+
+-- DataSpec-> data name = Constructor [| Constructor]*;
+pDataSpec :: Parser DataSpec
+pDataSpec = do reserved "data"
+               name <- uppercased
+               reservedOp "="
+               constructors <- sepBy1 pConstructor $ reservedOp "|"
+               semi
+               return $ (name, constructors)
+
+-- Constructor -> name [ args]*
+pConstructor :: Parser Constructor
+pConstructor = do name <- uppercased
+                  components <- many identifier
+                  return $ (name, components)
 
 -- Combinator -> var [ args]* = Expr
 pCombinator :: Parser Combinator
@@ -57,6 +77,14 @@ pCombinator = do name <- identifier
                  reservedOp "="
                  expr <- pExpr
                  return (name, args, expr)
+
+-- Data specifications and constructors must start with an uppercase letter
+uppercased :: Parser Name
+uppercased = do whiteSpace
+                first <- upper
+                rest <- many $ alphaNum <|> char '_' <|> char '\''
+                whiteSpace
+                return $ first:rest
 
 -- Atom -> Let | BinOp | Case | Lambda 
 pExpr :: Parser Expr
@@ -141,17 +169,17 @@ pApp = many1 pAtom >>= return . makeSpine where
 pAtom :: Parser Expr
 pAtom =   (identifier >>= return . Var)
       <|> (natural >>= return . Num . fromInteger)
-      <|> pConstructor
+      <|> pPack
       <|> parens pExpr
-      <?> "identifier, number, constructor, or parenthesized expression"
+      <?> "identifier, number, pack, or parenthesized expression"
 
--- Constructor -> Pack { tag , arity }
-pConstructor :: Parser Expr
-pConstructor = do reserved "Pack"
-                  (tag, arity) <- braces pair
-                  return $ Cons (fromInteger tag) (fromInteger arity)
-                  where pair = do tag <- natural
-                                  comma
-                                  arity <- natural
-                                  return (tag, arity)
+-- Pack -> Pack { tag , arity }
+pPack :: Parser Expr
+pPack = do reserved "Pack"
+           (tag, arity) <- braces pair
+           return $ Cons (fromInteger tag) (fromInteger arity)
+           where pair = do tag <- natural
+                           comma
+                           arity <- natural
+                           return (tag, arity)
 

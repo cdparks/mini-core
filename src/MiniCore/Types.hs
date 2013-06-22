@@ -16,6 +16,9 @@ type Alt        = (Int, [Name], Expr)
 type Combinator = (Name, [Name], Expr)
 type Program    = [Combinator]
 
+type Constructor = (Name, [Name])
+type DataSpec = (Name, [Constructor])
+
 -- Get binders and bindees
 bindersOf :: [(a, b)] -> [a]
 bindersOf = map fst
