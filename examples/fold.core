@@ -1,7 +1,6 @@
 -- Compute sum of list
 
-Cons x xs = Pack{3, 2} x xs;
-
+Cons = Pack{3, 2};
 Nil = Pack{4, 0};
 
 foldr op last ls = case ls of

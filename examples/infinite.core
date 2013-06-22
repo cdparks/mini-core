@@ -1,7 +1,6 @@
 -- Take 10 elements from the front of an infinite list
 
-Cons x xs = Pack{3, 2} x xs;
-
+Cons = Pack{3, 2};
 Nil = Pack{4, 0};
 
 infinite x = Cons x (infinite (x + 1));

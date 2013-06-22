@@ -15,8 +15,8 @@ A program is just a sequence of supercombinators. Execution proceeds by reducing
 
 ```haskell
 -- A List data type
-Cons a b = Pack{3, 2} a b; -- Cons uses the tag 3 and has 2 components
-Nil      = Pack{4, 0};     -- Nil uses the tag 4 and has 0 components
+Cons = Pack{3, 2}; -- Cons uses the tag 3 and has 2 components
+Nil  = Pack{4, 0}; -- Nil uses the tag 4 and has 0 components
 
 -- mini-core is non-strict; we can construct infinite data structures
 infinite x = Cons x (infinite (x + 1));

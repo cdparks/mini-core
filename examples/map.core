@@ -1,7 +1,6 @@
 -- Map cube across list of numbers
 
-Cons x xs = Pack{3, 2} x xs;
-
+Cons = Pack{3, 2};
 Nil = Pack{4, 0};
 
 map f ls = case ls of
