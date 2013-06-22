@@ -14,7 +14,7 @@ languageDef =
     emptyDef { Token.commentStart    = "{-"
              , Token.commentEnd      = "-}"
              , Token.commentLine     = "--"
-             , Token.identStart      = letter
+             , Token.identStart      = letter <|> char '_'
              , Token.identLetter     = alphaNum <|> char '_' <|> char '\''
              , Token.reservedNames   = [ "data"
                                        , "let"
@@ -23,7 +23,6 @@ languageDef =
                                        , "in"
                                        , "of"
                                        , "Pack"
-                                       , "_"
                                        ]
              , Token.reservedOpNames = "|":"\\":"=":"->":(map fst precByOp)
              }
@@ -39,28 +38,28 @@ angles     = Token.angles     lexer
 natural    = Token.natural    lexer
 semi       = Token.semi       lexer
 comma      = Token.comma      lexer
+symbol     = Token.symbol     lexer
 whiteSpace = Token.whiteSpace lexer
 
-parseCore :: String -> ([DataSpec], Program)
+parseCore :: String -> Program
 parseCore s =
     case parse pCore "core" s of
         Left e  -> error $ show e
         Right r -> r
 
 -- Program -> DataType;* Combinator [; Combinator]*
-pCore :: Parser ([DataSpec], Program)
+pCore :: Parser Program
 pCore = do whiteSpace
-           dataSpecs <- many pDataSpec
-           program <- pCombinator `sepEndBy1` semi
-           eof >> return (dataSpecs, program)
+           declarations <- many $ pDataSpec <|> pCombinator
+           eof >> return declarations
 
--- DataSpec-> data name = Constructor [| Constructor]*;
-pDataSpec :: Parser DataSpec
+-- DataSpec -> data name = Constructor [| Constructor]*;
+pDataSpec :: Parser Declaration
 pDataSpec = do reserved "data"
                name <- uppercased
                reservedOp "="
                constructors <- sepBy1 pConstructor $ reservedOp "|"
-               semi >> return (name, constructors)
+               semi >> return (DataSpec name constructors)
 
 -- Constructor -> name [ args]*
 pConstructor :: Parser Constructor
@@ -68,13 +67,13 @@ pConstructor = do name <- uppercased
                   components <- many identifier
                   return (name, components)
 
--- Combinator -> var [ args]* = Expr
-pCombinator :: Parser Combinator
+-- Combinator -> var [ args]* = Expr;
+pCombinator :: Parser Declaration
 pCombinator = do name <- identifier
                  args <- many identifier
                  reservedOp "="
                  expr <- pExpr
-                 return (name, args, expr)
+                 semi >> return (Combinator name args expr)
 
 -- Data specifications and constructors must start with an uppercase letter
 uppercased :: Parser Name
@@ -124,7 +123,7 @@ pAlt = do (name, components) <- pWild <|> pConstructor
           return $ (name, components, expr)
 
 pWild :: Parser Constructor
-pWild = do reserved "_"
+pWild = do symbol "_"
            return $ ("_", [])
 
 -- Lambda -> \var+ -> Expr

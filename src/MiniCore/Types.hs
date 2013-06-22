@@ -1,6 +1,20 @@
 module MiniCore.Types where
 
 {- Core Expression types -}
+
+-- A program is a list of declarations
+type Program = [Declaration]
+
+-- A declaration is a super-combinator or a data specification
+data Declaration = Combinator Name [Name] Expr
+                 | DataSpec Name [Constructor]
+                   deriving Show
+
+-- A constructor has a name and a list of components
+type Constructor = (Name, [Name])
+
+-- An expression is a variable, number, Cons (Pack) operation, application,
+-- let, case, or lambda expression.
 data Expr = Var Name
           | Num Int
           | Cons Int Int
@@ -13,13 +27,10 @@ data Expr = Var Name
 
 type Name       = String
 type IsRec      = Bool
-type Combinator = (Name, [Name], Expr)
-type Program    = [Combinator]
 
+-- Case alternative contains some value we can match on,
+-- a list of names to bind, and a body
 type Alt a      = (a, [Name], Expr)
-
-type Constructor = (Name, [Name])
-type DataSpec = (Name, [Constructor])
 
 -- Get binders and bindees
 bindersOf :: [(a, b)] -> [a]
