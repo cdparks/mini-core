@@ -1,9 +1,7 @@
 {-# LANGUAGE OverlappingInstances, TypeSynonymInstances, FlexibleInstances #-}
 
 module MiniCore.Format (
-    formatExpr,
-    formatDeclaration,
-    formatProgram,
+    format,
     formatLast,
     formatState,
     formatResults,
@@ -31,77 +29,94 @@ join = sep . map text
 
 {- Pretty-print program source -}
 
+-- Format typeclass defines how a value should be pretty-printed
+class Format a where
+    format :: a -> Doc
+    format = formatPrec lowestPrec
+
+    formatPrec :: Int -> a -> Doc
+    formatPrec = const format
+
 -- Pretty-print list of declarations
-formatProgram :: Program -> Doc
-formatProgram = sep . map formatDeclaration
+instance Format Program where
+    format = sep . map format
 
 -- Pretty-print a declaration (data or combinator)
-formatDeclaration :: Declaration -> Doc
-formatDeclaration (Combinator name args expr) =
-    text name <+> join args <+> text "=" <+> formatExpr expr <> semi
-formatDeclaration (DataSpec name constructors) =
-    text "data" <+> text name <+> text "=" <+>
-    sep (intersperse (char '|') $ map formatConstructor constructors) <> semi
+instance Format Declaration where
+    format (Combinator name args expr) =
+        text name <+> join args <+> text "=" <+> format expr <> semi
+    format (DataSpec name constructors) =
+        text "data" <+> text name <+> text "=" <+>
+        sep (intersperse (char '|') $ map format constructors) <> semi
 
 -- Pretty-print a constructor
-formatConstructor :: Constructor -> Doc
-formatConstructor (name, components) = text name <+> join components
-
--- Convert expression into a formatted object
-formatExpr :: Expr -> Doc
-formatExpr = formatPrec lowestPrec where
+instance Format Constructor where
+    format (name, components) = text name <+> join components
 
 -- Convert expression into a formatted object keeping track
 -- of precedence
-formatPrec :: Int -> Expr -> Doc
-formatPrec _ (Var v) = text v
-formatPrec _ (Num n) = int n
-formatPrec _ (Cons tag arity) = text "Pack" <> braces (int tag <> comma <> int arity)
-formatPrec prec (App (App (Var op) e1) e2) =
-    case lookup op precByOp of
-        Just prec' -> wrap expr where
-            expr = formatPrec prec' e1 <+> text op <+> formatPrec prec' e2
-            wrap | prec' > prec = id
-                 | otherwise    = parens
-        Nothing -> wrap expr where
-            expr = text op <+> formatPrec applyPrec e1 <+> formatPrec applyPrec e2
-            wrap | prec == applyPrec = parens
-                 | otherwise         = id
-formatPrec prec (App e1 e2) = wrap expr where
-    expr = formatPrec applyPrec e1 <+> formatPrec applyPrec e2
-    wrap | prec == applyPrec = parens
-         | otherwise         = id
-formatPrec _ (Let recursive bindings body) =
-    text keyword <+> lbrace $$ nest 2 (formatBindings lowestPrec bindings) $$
-    rbrace <+> text "in" <+> formatPrec lowestPrec body
-        where keyword | recursive = "letrec"
-                      | otherwise = "let"
-formatPrec _ (TagCase scrutinee alts) =
-    text "case" <+> formatPrec lowestPrec scrutinee <+>
-    text "of" <+> lbrace $$ nest 2 (formatTagAlts lowestPrec alts) $$ rbrace
-formatPrec _ (ConCase scrutinee alts) =
-    text "case" <+> formatPrec lowestPrec scrutinee <+>
-    text "of" <+> lbrace $$ nest 2 (formatConAlts lowestPrec alts) $$ rbrace
-formatPrec _ (Lambda args body) =
-    parens $ text "\\" <> join args <+>
-    text "->" <+> formatPrec lowestPrec body
+instance Format Expr where
+    -- Variable
+    formatPrec _ (Var v) = text v
+
+    -- Number
+    formatPrec _ (Num n) = int n
+
+    -- Pack operator
+    formatPrec _ (Cons tag arity) = text "Pack" <> braces (int tag <> comma <> int arity)
+
+    -- Binary application
+    formatPrec prec (App (App (Var op) e1) e2) =
+        case lookup op precByOp of
+            Just prec' -> wrap expr where
+                expr = formatPrec prec' e1 <+> text op <+> formatPrec prec' e2
+                wrap | prec' > prec = id
+                     | otherwise    = parens
+            Nothing -> wrap expr where
+                expr = text op <+> formatPrec applyPrec e1 <+> formatPrec applyPrec e2
+                wrap | prec == applyPrec = parens
+                     | otherwise         = id
+
+    -- Prefix application
+    formatPrec prec (App e1 e2) = wrap expr where
+        expr = formatPrec applyPrec e1 <+> formatPrec applyPrec e2
+        wrap | prec == applyPrec = parens
+             | otherwise         = id
+
+    -- Let expression
+    formatPrec _ (Let recursive bindings body) =
+        text keyword <+> lbrace $$ nest 2 (format bindings) $$
+        rbrace <+> text "in" <+> format body
+            where keyword | recursive = "letrec"
+                          | otherwise = "let"
+
+    -- Case expression
+    formatPrec _ (Case scrutinee alts) =
+        text "case" <+> format scrutinee <+>
+        text "of" <+> lbrace $$ nest 2 (format alts) $$ rbrace
+
+    -- Lambda expression
+    formatPrec _ (Lambda args body) =
+        parens $ text "\\" <> join args <+>
+        text "->" <+> formatPrec lowestPrec body
 
 -- Format name = expression pairs
-formatBindings :: Int -> [(Name, Expr)] -> Doc
-formatBindings prec bindings = vcat (punctuate semi (map formatBinding bindings)) <> semi where
-    formatBinding (name, expr) = text name <+> text "=" <+> formatPrec prec expr
+instance Format [(Name, Expr)] where
+    formatPrec prec bindings =
+        vcat (punctuate semi (map formatBinding bindings)) <> semi where
+            formatBinding (name, expr) = text name <+> text "=" <+> formatPrec prec expr
 
--- Format alternatives of of the form <tag> [arg ...] -> expr
-formatTagAlts :: Int -> [Alt Int] -> Doc
-formatTagAlts prec alts = vcat (punctuate semi (map formatAlt alts)) <> semi where
-    formatAlt (tag, args, expr) = text "<" <> int tag <> text ">" <+>
-        join args <+> text "->" <+> formatPrec prec expr
+-- Format alternatives of of the form Pattern [arg ...] -> expr
+instance Format [Alt] where
+    formatPrec prec alts =
+        vcat (punctuate semi (map formatAlt alts)) <> semi where
+            formatAlt (pattern, args, expr) = format pattern <+> join args <+>
+                text "->" <+> formatPrec prec expr
 
--- Format alternatives of of the form Constructor [arg ...] -> expr
-formatConAlts :: Int -> [Alt Name] -> Doc
-formatConAlts prec alts = vcat (punctuate semi (map formatAlt alts)) <> semi where
-    formatAlt (name, args, expr) = text name <+> join args <+>
-        text "->" <+> formatPrec prec expr
+-- Format constructor, wildcard, or internal tagged pattern
+instance Format Pattern where
+    format (PCon constructor) = text constructor
+    format (PTag tag)         = text "<" <> int tag <> text ">"
 
 {- Pretty-print machine states -}
 

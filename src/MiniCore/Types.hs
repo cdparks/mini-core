@@ -20,8 +20,7 @@ data Expr = Var Name
           | Cons Int Int
           | App Expr Expr
           | Let IsRec [(Name, Expr)] Expr
-          | ConCase Expr [Alt Name]
-          | TagCase Expr [Alt Int]
+          | Case Expr [Alt]
           | Lambda [Name] Expr
             deriving (Show)
 
@@ -30,7 +29,12 @@ type IsRec      = Bool
 
 -- Case alternative contains some value we can match on,
 -- a list of names to bind, and a body
-type Alt a      = (a, [Name], Expr)
+type Alt = (Pattern, [Name], Expr)
+
+-- Pattern is a constructor name or an integer tag (internal representation)
+data Pattern = PCon Name
+             | PTag Int
+               deriving Show
 
 -- Get binders and bindees
 bindersOf :: [(a, b)] -> [a]

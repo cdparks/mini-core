@@ -112,15 +112,15 @@ pCase = do reserved "case"
            expr <- pExpr
            reserved "of"
            alts <- braces $ pAlt `sepEndBy1` semi
-           return $ ConCase expr alts
+           return $ Case expr alts
 
 -- Alts -> <tag> arg* -> Expr [; <tag> arg* -> Expr]*
 -- Alts -> Wild | Constructor -> Expr [; Constructor -> expr]*
-pAlt :: Parser (Alt Name)
+pAlt :: Parser Alt
 pAlt = do (name, components) <- pWild <|> pConstructor
           reservedOp "->"
           expr <- pExpr
-          return $ (name, components, expr)
+          return $ (PCon name, components, expr)
 
 pWild :: Parser Constructor
 pWild = do symbol "_"
