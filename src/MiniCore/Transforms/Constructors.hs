@@ -1,76 +1,68 @@
 module MiniCore.Transforms.Constructors (
-    liftConstructors
+    convertConstructors
 ) where
 
 import MiniCore.Types
 
+import Data.List
 import qualified Data.Map as Map
 import Control.Monad.State
 
--- Map constructor names of the form $Pack{tag,arity} to
--- (tag, arity) for generating supercombinators of the form
--- $Pack{tag,arity} $1 ... $arity = Cons tag arity
+-- Strip out DataSpecs and convert their constructors into super-combinators
+-- Return new program and 
+convertConstructors :: Program -> (Program, ConstructorEnv)
+convertConstructors program = (combinators' ++ combinators, cEnv state) where
+    (dataSpecs, combinators) = partition isDataSpec program
+    constructors = concatMap getConstructors dataSpecs
+    (combinators', state) = runState (mapM newCombinator constructors) initialEnv
+
+-- Is declaration a DataSpec or a Combinator?
+isDataSpec :: Declaration -> Bool
+isDataSpec (DataSpec {}) = True
+isDataSpec _             = False
+
+-- Grab all constructors out of a single DataSpec
+getConstructors :: Declaration -> [Constructor]
+getConstructors (DataSpec _ constructors) = constructors
+getConstructors _                         = [] -- Shouldn't happen
+
+-- Map constructor names to (tag, arity)
 type ConstructorEnv = Map.Map Name (Int, Int)
+type ConstructorTag = Int
 
--- Lift constructors to top level and add to program as
--- supercombinators
-liftConstructors :: Program -> Program
-liftConstructors program = buildConstructors (Map.toList constructors) ++ program' where
-    (program', constructors) = runState (findConstructors program) Map.empty
+-- Map constructor names to (tag, arity). Increment the tag when
+-- adding a new constructor.
+data ConstructorState = ConstructorState
+    { cTag :: ConstructorTag
+    , cEnv :: ConstructorEnv
+    } deriving Show
 
-    -- Build supercombinators for constructors
-    buildConstructors :: [(Name, (Int, Int))] -> Program
-    buildConstructors = map buildConstructor where
-        buildConstructor (name, (tag, arity)) = (name, makeArgs arity, Cons tag arity)
-        makeArgs n = map (('$':) . show) [1..n]
+-- The default constructor _ has tag and arity 0. Additionally, True and False
+-- are defined in the prelude since primitives can generate them.
+initialEnv = ConstructorState
+    { cTag = 3
+    , cEnv = Map.fromList
+        [ ("_", (0, 0))
+        , ("False", (1, 0))
+        , ("True", (2, 0))
+        ]
+    }
 
-    -- Find constructors and replace references to with references to
-    -- not-yet-created supercombinators
-    findConstructors :: Program -> State ConstructorEnv Program
-    findConstructors = mapM findConstructor where
-        findConstructor (name, args, body) = do
-            body' <- walk body
-            return $ (name, args, body')
-
-    -- Walk down expression tree adding constructors to state and
-    -- replacing references
-    walk :: Expr -> State ConstructorEnv Expr
-    walk (App e1 e2) = do
-        e1' <- walk e1
-        e2' <- walk e2
-        return $ App e1' e2'
-    walk (Cons tag arity) = do
-        let name = makeConsName tag arity
-        modify $ Map.insert name (tag, arity)
-        return $ Var name
-    walk (Let rec defs expr) = do
-        defs' <- walkDefs defs
-        expr' <- walk expr
-        return $ Let rec defs' expr'
-    walk (Case expr alts) = do
-        expr' <- walk expr
-        alts' <- walkAlts alts
-        return $ Case expr' alts'
-    walk (Lambda args expr) = do
-        expr' <- walk expr
-        return $ Lambda args expr'
-    walk e = return e
-
-    -- Walk each let-binding
-    walkDefs :: [(Name, Expr)] -> State ConstructorEnv [(Name, Expr)]
-    walkDefs = mapM walkDef where
-        walkDef (name, expr) = do
-            expr' <- walk expr
-            return $ (name, expr')
-
-    -- Walk each case-alternative
-    walkAlts :: [Alt] -> State ConstructorEnv [Alt]
-    walkAlts = mapM walkAlt where
-        walkAlt (tag, args, expr) = do
-            expr' <- walk expr
-            return $ (tag, args, expr')
-
-    -- Generate a supercombinator name for constructor
-    makeConsName :: Int -> Int -> Name
-    makeConsName tag arity = "$Pack{" ++ show tag ++ "," ++ show arity ++ "}"
+-- Generate a new constructor combinator and associate a new tag
+-- with the constructor name. Raise error on duplicate constructor
+-- names.
+newCombinator :: Constructor -> State ConstructorState Declaration
+newCombinator (name, components) = do
+    env <- gets cEnv
+    tag <- gets cTag
+    let arity = length components
+    when (Map.member name env) $
+        error $ "Duplicate constructor " ++ name
+    modify $ \s -> s
+        { cTag = tag + 1
+        , cEnv = Map.insert name (tag, arity) env
+        }
+    return $ Combinator name components
+           $ foldl App (Cons tag arity)
+           $ map Var components
 

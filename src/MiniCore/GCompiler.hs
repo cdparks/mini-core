@@ -41,8 +41,8 @@ primitives =
     , ("||",     ["x", "y"],      App (App (App (Var "if") (Var "x")) (Var "True")) (Var "y"))
     , ("not",    ["x"],           App (App (App (Var "if") (Var "x")) (Var "False")) (Var "True"))
     , ("if",     ["c", "t", "f"], App (App (App (Var "if") (Var "c")) (Var "t")) (Var "f"))
-    , ("True",   [],              Cons 2 0)
     , ("False",  [],              Cons 1 0)
+    , ("True",   [],              Cons 2 0)
     ]
 
 -- Instruction for each binary operator
