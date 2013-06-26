@@ -75,7 +75,7 @@ data AExpr a b = AVar Name
 
 type Annotated a b = (b, AExpr a b)
 type ADef a b      = (a, Annotated a b)
-type AAlt a b      = (Int, [a], (Annotated a b))
+type AAlt a b      = (Pattern, [a], (Annotated a b))
 type AProgram a b  = [(Name, [a], Annotated a b)]
 
 {- Heap types -}

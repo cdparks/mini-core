@@ -26,7 +26,7 @@ fresh = do
 
 -- Walk program and return a new AST annotated with each node's free variables
 freeVars :: Program -> AProgram Name (Set.Set Name)
-freeVars = map $ \(name, args, body) -> (name, args, walk (Set.fromList args) body) where
+freeVars = map $ \(Combinator name args body) -> (name, args, walk (Set.fromList args) body) where
     walk :: Set.Set Name -> Expr -> Annotated Name (Set.Set Name)
     walk vars (Num n) = (Set.empty, ANum n)
     walk vars (Cons tag arity) = (Set.empty, ACons tag arity)
@@ -77,7 +77,7 @@ freeVarsOf (vars, _) = vars
 
 -- Partially apply lambda expressions to pass in "free" variables
 abstract :: AProgram Name (Set.Set Name) -> Program
-abstract = map $ \(name, args, rhs) -> (name, args, walk rhs) where
+abstract = map $ \(name, args, rhs) -> Combinator name args $ walk rhs where
     walk :: Annotated Name (Set.Set Name) -> Expr
     walk (free, AVar v) = Var v
     walk (free, ANum n) = Num n
@@ -97,11 +97,11 @@ abstract = map $ \(name, args, rhs) -> (name, args, walk rhs) where
 
 -- Make each name in program unique
 rename :: Program -> Program
-rename program = evalState (mapM renameSC  program) $ NameSupply 1 where
-    renameSC (name, args, body) = do
+rename program = evalState (mapM renameSC program) $ NameSupply 1 where
+    renameSC (Combinator name args body) = do
         (args', env) <- newNames args
         body' <- walk env body
-        return $ (name, args', body')
+        return $ Combinator name args' body'
 
     walk :: Map.Map Name Name -> Expr -> State NameSupply Expr
     walk env (Var v) = return $ case Map.lookup v env of
@@ -147,15 +147,12 @@ newNames args = do
 -- Find lambda expressions and promote them to supercombinators
 collectCombinators :: Program -> Program
 collectCombinators = concatMap $ \c -> execState (collectCombinator c) [] where
-    collectCombinator :: Combinator -> State [Combinator] ()
-    collectCombinator (name, args, rhs) = do
-        rhs' <- walk rhs
-        modify $ \cs -> (name, args, rhs'):cs
+    collectCombinator :: Declaration -> State [Declaration] ()
+    collectCombinator (Combinator name args body) = do
+        body' <- walk body
+        modify $ \cs -> Combinator name args body':cs
 
-    walk :: Expr -> State [Combinator] Expr
-    walk x@(Num _) = return x
-    walk x@(Var _) = return x
-    walk x@(Cons _ _) = return x
+    walk :: Expr -> State [Declaration] Expr
     walk (App e1 e2) = do
         e1' <- walk e1
         e2' <- walk e2
@@ -176,13 +173,14 @@ collectCombinators = concatMap $ \c -> execState (collectCombinator c) [] where
         case bindings of
             [] -> return body'
             _  -> return $ Let recursive bindings body'
+    walk x = return x
 
-    walkDef :: (Name, Expr) -> State [Combinator] (Name, Expr)
+    walkDef :: (Name, Expr) -> State [Declaration] (Name, Expr)
     walkDef (name, expr) = do
         expr' <- walk expr
         return (name, expr')
 
-    walkAlt :: Alt -> State [Combinator] Alt
+    walkAlt :: Alt -> State [Declaration] Alt
     walkAlt (tag, args, rhs) = do
         rhs' <- walk rhs
         return $ (tag, args, rhs')
@@ -191,6 +189,6 @@ collectCombinators = concatMap $ \c -> execState (collectCombinator c) [] where
     isLambda (Lambda _ _) = True
     isLambda _            = False
 
-    toCombinator :: (Name, Expr) -> Combinator
-    toCombinator (name, Lambda args body) = (name, args, body)
+    toCombinator :: (Name, Expr) -> Declaration
+    toCombinator (name, Lambda args body) = Combinator name args body
 
