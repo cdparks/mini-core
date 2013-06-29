@@ -1,20 +1,21 @@
 # Mini-Core
 ## Overview
-Mini-Core is an implementation of the Core language described in [Implementing Functional Languages: A Tutorial](http://research.microsoft.com/en-us/um/people/simonpj/papers/pj-lester-book/) by Simon Peyton Jones & David Lester. I'm following the book fairly closely, but I'm using Haskell instead of Miranda. Eventually, I'd like to add some syntactic sugar for better pattern matching and data type specification.
+Mini-Core is an implementation of the Core language described in [Implementing Functional Languages: A Tutorial](http://research.microsoft.com/en-us/um/people/simonpj/papers/pj-lester-book/) by Simon Peyton Jones & David Lester. I'm following the book fairly closely, but I'm using Haskell instead of Miranda. I've diverged slightly by adding some concrete syntax for specifying data constructors and matching on them in case-expressions.
 
 ## Usage
 mini-core compiles a file to G-code and executes it in a virtual G-Machine.
-
     Usage: mini-core [OPTION...] file
-      -v  --verbose  Print each machine state as program executes
-      -s  --step     Single-step through program execution (n -> next, q -> quit)
-      -h  --help     Print usage and exit
+      -v  --verbose      Print each machine state as program executes
+      -s  --step         Single-step through program execution (enter -> next, q -> quit)
+      -p  --prettyprint  Just show program after parsing
+      -t  --transform    Just show program after constructor generation and lambda lifting
+      -h  --help         Print usage and exit
 
 ## Example Program
 A program is just a sequence of supercombinators. Execution proceeds by reducing the supercombinator `main`. Simple algebraic data types are supported using tagged constructors.
 
 ```haskell
--- A List data specification; specifies the "shape" of our constructors
+-- A List data specification; specifies the shape of our constructors
 data List = Cons x xs | Nil;
 
 -- mini-core is non-strict; we can construct infinite data structures

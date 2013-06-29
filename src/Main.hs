@@ -29,6 +29,10 @@ startStep program = do
     putStrLn $ show $ formatFirstStep state
     step state
 
+-- Just print program after parsing
+prettyprint :: String -> String
+prettyprint = show . format . parseCore
+
 -- Just print program after transformations
 transformed :: String -> String
 transformed = show . format . transform . parseCore
@@ -44,18 +48,19 @@ step state = do
 -- Ask if user wants to continue
 ask :: GMState -> IO ()
 ask state = do
-    putStr "Next/Quit? [n/q]:"
+    putStr "Next/Quit? [enter/q]:"
     hFlush stdout
     line <- getLine
     case line of
-        "q" -> return ()
-        "n" -> step $ single state
+        "q"    -> return ()
+        ""     -> step $ single state
         _      -> ask state
 
 -- Execution flag
 data Flag = Normal
           | Step
           | Verbose
+          | PrettyPrint
           | Transform
             deriving Show
 
@@ -72,10 +77,13 @@ options = [ Option ['v'] ["verbose"]
                 "Print each machine state as program executes"
           , Option ['s'] ["step"]
                 (NoArg $ return . const Step)
-                "Single-step through program execution (n -> next, q -> quit)"
+                "Single-step through program execution (enter -> next, q -> quit)"
+          , Option ['p'] ["prettyprint"]
+                (NoArg $ return . const PrettyPrint)
+                "Just show program after parsing"
           , Option ['t'] ["transform"]
                 (NoArg $ return . const Transform)
-                "Just show program after constructor and lambda lifting"
+                "Just show program after constructor generation and lambda lifting"
           , Option ['h'] ["help"]
                 (NoArg . const $ usage [])
                 "Print usage and exit"
@@ -111,8 +119,9 @@ main = do
     Context { sFlag = flag, sFile = file } <- getContext
     program <- readFile file
     case flag of
-        Normal    -> putStrLn $ run program
-        Verbose   -> putStrLn $ debug program
-        Transform -> putStrLn $ transformed program
-        Step      -> startStep program
+        Normal      -> putStrLn $ run program
+        Verbose     -> putStrLn $ debug program
+        PrettyPrint -> putStrLn $ prettyprint program
+        Transform   -> putStrLn $ transformed program
+        Step        -> startStep program
 
