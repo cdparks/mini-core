@@ -41,17 +41,31 @@ comma      = Token.comma      lexer
 symbol     = Token.symbol     lexer
 whiteSpace = Token.whiteSpace lexer
 
+-- Data specifications and constructors must start with an uppercase letter
+uppercased :: Parser Name
+uppercased = do whiteSpace
+                first <- upper
+                rest <- many $ alphaNum <|> char '_' <|> char '\''
+                whiteSpace >> return (first:rest)
+
+-- Parser entry point
 parseCore :: String -> Program
 parseCore s =
     case parse pCore "core" s of
         Left e  -> error $ show e
         Right r -> r
 
--- Program -> DataType;* Combinator [; Combinator]*
+-- Program -> Declaration*
 pCore :: Parser Program
 pCore = do whiteSpace
-           declarations <- many $ pDataSpec <|> pCombinator
+           declarations <- many pDeclaration
            eof >> return declarations
+
+-- Declaration -> DataSpec | Combinator
+pDeclaration :: Parser Declaration
+pDeclaration =  pDataSpec
+            <|> pCombinator
+            <?> "data specification or supercombinator"
 
 -- DataSpec -> data name = Constructor [| Constructor]*;
 pDataSpec :: Parser Declaration
@@ -74,13 +88,6 @@ pCombinator = do name <- identifier
                  reservedOp "="
                  expr <- pExpr
                  semi >> return (Combinator name args expr)
-
--- Data specifications and constructors must start with an uppercase letter
-uppercased :: Parser Name
-uppercased = do whiteSpace
-                first <- upper
-                rest <- many $ alphaNum <|> char '_' <|> char '\''
-                whiteSpace >> return (first:rest)
 
 -- Atom -> Let | BinOp | Case | Lambda 
 pExpr :: Parser Expr
@@ -106,7 +113,7 @@ pBinding = do name <- identifier
               expr <- pExpr
               return (name, expr)
 
--- Case -> case Expr of Alts
+-- Case -> case Expr of { Alt;+ }
 pCase :: Parser Expr
 pCase = do reserved "case"
            expr <- pExpr
@@ -114,17 +121,12 @@ pCase = do reserved "case"
            alts <- braces $ pAlt `sepEndBy1` semi
            return $ Case expr alts
 
--- Alts -> <tag> arg* -> Expr [; <tag> arg* -> Expr]*
--- Alts -> Wild | Constructor -> Expr [; Constructor -> expr]*
+-- Alt -> Constructor -> Expr
 pAlt :: Parser Alt
-pAlt = do (name, components) <- pWild <|> pConstructor
+pAlt = do (name, components) <- pConstructor
           reservedOp "->"
           expr <- pExpr
           return $ (PCon name, components, expr)
-
-pWild :: Parser Constructor
-pWild = do symbol "_"
-           return $ ("_", [])
 
 -- Lambda -> \var+ -> Expr
 pLambda :: Parser Expr
@@ -163,23 +165,10 @@ pApp :: Parser Expr
 pApp = many1 pAtom >>= return . makeSpine where
     makeSpine (x:xs) = foldl App x xs
 
--- Atom -> var | num | Constructor | ( Expr )
+-- Atom -> var | num | ( Expr )
 pAtom :: Parser Expr
 pAtom =   (identifier >>= return . Var)
       <|> (natural >>= return . Num . fromInteger)
-      -- <|> pPack
       <|> parens pExpr
-      <?> "identifier, number, pack, or parenthesized expression"
-
-{-
--- Pack -> Pack { tag , arity }
-pPack :: Parser Expr
-pPack = do reserved "Pack"
-           (tag, arity) <- braces pair
-           return $ Cons (fromInteger tag) (fromInteger arity)
-           where pair = do tag <- natural
-                           comma
-                           arity <- natural
-                           return (tag, arity)
--}
+      <?> "identifier, number, or parenthesized expression"
 
