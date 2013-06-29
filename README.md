@@ -4,6 +4,7 @@ Mini-Core is an implementation of the Core language described in [Implementing F
 
 ## Usage
 mini-core compiles a file to G-code and executes it in a virtual G-Machine.
+
     Usage: mini-core [OPTION...] file
       -v  --verbose      Print each machine state as program executes
       -s  --step         Single-step through program execution (enter -> next, q -> quit)
