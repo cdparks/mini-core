@@ -113,9 +113,9 @@ walkAlts alts = mapM walkAlt alts where
         let (tag, arity) = case value of
                 Just x  -> x
                 Nothing -> error $ "No declaration found for " ++ constructor
-        if length args /= arity then
-            error $ "Constructor " ++ constructor ++ " has " ++ show arity ++ " components"
-        else do
-            expr' <- walk expr
-            return (PTag tag, args, expr')
+        expr' <- if length args /= arity then
+                    error $ "Constructor " ++ constructor ++
+                            " has " ++ show arity ++ " components"
+                 else walk expr
+        return (PTag tag, args, expr')
 

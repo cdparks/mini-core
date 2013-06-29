@@ -16,22 +16,22 @@ import Data.List
 
 -- Compile and run program
 run :: String -> String
-run = show . formatLast . evaluate . compile . transform . snd . parseCore
+run = show . formatLast . evaluate . compile . transform . parseCore
 
 -- Compile and run program printing intermediate states
 debug :: String -> String
-debug = show . formatResults . evaluate . compile . transform . snd . parseCore
+debug = show . formatResults . evaluate . compile . transform . parseCore
 
 -- Compile program and generate initial state
 startStep :: String -> IO ()
 startStep program = do
-    let state = single $ compile $ transform $ snd $ parseCore program
+    let state = single $ compile $ transform $ parseCore program
     putStrLn $ show $ formatFirstStep state
     step state
 
 -- Just print program after transformations
 transformed :: String -> String
-transformed = show . formatProgram . transform . snd . parseCore
+transformed = show . format . transform . parseCore
 
 -- Step from one state to the next 
 step :: GMState -> IO ()

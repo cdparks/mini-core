@@ -1,13 +1,13 @@
 -- Compute sum of list
 
-Cons = Pack{3, 2};
-Nil = Pack{4, 0};
+data List = Cons x xs | Nil;
 
-foldr op last ls = case ls of
-    <3> x xs -> op x (foldr op last xs);
-    <4>      -> last;
+foldr op last ls = case ls of {
+    Cons x xs -> op x (foldr op last xs);
+    Nil       -> last;
+};
 
 list = Cons 1 (Cons 3 (Cons 5 (Cons 7 Nil)));
 
-main = foldr (\x y -> x + y) 0 list
+main = foldr (\x y -> x + y) 0 list;
 

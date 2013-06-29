@@ -1,15 +1,15 @@
 -- Take 10 elements from the front of an infinite list
 
-Cons = Pack{3, 2};
-Nil = Pack{4, 0};
+data List = Cons x xs | Nil;
 
 infinite x = Cons x (infinite (x + 1));
 
 take n ls = if (n <= 0)
                 Nil
-                (case ls of
-                    <3> x xs -> Cons x (take (n - 1) xs);
-                    <4>      -> Nil);
+                (case ls of {
+                    Cons x xs -> Cons x (take (n - 1) xs);
+                    Nil       -> Nil;
+                });
 
-main = take 10 (infinite 0)
+main = take 10 (infinite 0);
 

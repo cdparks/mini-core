@@ -14,9 +14,8 @@ mini-core compiles a file to G-code and executes it in a virtual G-Machine.
 A program is just a sequence of supercombinators. Execution proceeds by reducing the supercombinator `main`. Simple algebraic data types are supported using tagged constructors.
 
 ```haskell
--- A List data type
-Cons = Pack{3, 2}; -- Cons uses the tag 3 and has 2 components
-Nil  = Pack{4, 0}; -- Nil uses the tag 4 and has 0 components
+-- A List data specification; specifies the "shape" of our constructors
+data List = Cons x xs | Nil;
 
 -- mini-core is non-strict; we can construct infinite data structures
 infinite x = Cons x (infinite (x + 1));
@@ -25,13 +24,15 @@ infinite x = Cons x (infinite (x + 1));
 -- tag and bind its components to the names preceding the arrow
 take n ls = if (n <= 0)
                 Nil
-                (case ls of
-                    <3> x xs -> Cons x (take (n - 1) xs);
-                    <4>      -> Nil);
+                (case ls of {
+                    Cons x xs -> Cons x (take (n - 1) xs);
+                    Nil       -> Nil;
+                });
 
-map f ls = case ls of
-    <3> x xs -> Cons (f x) (map f xs);
-    <4>      -> Nil;
+map f ls = case ls of {
+    Cons x xs -> Cons (f x) (map f xs);
+    Nil       -> Nil;
+};
 
 -- Print the squares of the first 10 elements of an infinite list
 -- (Now with lambdas!)

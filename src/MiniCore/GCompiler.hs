@@ -11,38 +11,40 @@ import Debug.Trace
 
 -- Standard library
 prelude :: Program
-prelude = [ ("I",  ["x"], Var "x")
-          , ("K",  ["x", "y"], Var "x")
-          , ("K1", ["x", "y"], Var "y")
-          , ("S",  ["f", "g", "x"], App (App (Var "f") (Var "x"))
-                                        (App (Var "g") (Var "x")))
-          , ("compose", ["f", "g", "x"], App (Var "f") (App (Var "g") (Var "x")))
-          , ("twice",   ["f"], App (App (Var "compose") (Var "f")) (Var "f"))
+prelude = [ Combinator "I"  ["x"] $ Var "x"
+          , Combinator "K"  ["x", "y"] $ Var "x"
+          , Combinator "K1" ["x", "y"] $ Var "y"
+          , Combinator "S"  ["f", "g", "x"] $
+                App (App (Var "f") (Var "x")) (App (Var "g") (Var "x"))
+          , Combinator "compose" ["f", "g", "x"] $
+                App (Var "f") (App (Var "g") (Var "x"))
+          , Combinator "twice" ["f"] $
+                App (App (Var "compose") (Var "f")) (Var "f")
           ]
 
 -- Extra definitions to add to the initial global environment
 extraDefs = []
 
 -- Uncompiled Primitives
-primitives :: [(Name, [Name], Expr)]
+primitives :: Program
 primitives =
-    [ ("+",      ["x", "y"],      App (App (Var "+")  (Var "x")) (Var "y"))
-    , ("-",      ["x", "y"],      App (App (Var "-")  (Var "x")) (Var "y"))
-    , ("*",      ["x", "y"],      App (App (Var "*")  (Var "x")) (Var "y"))
-    , ("/",      ["x", "y"],      App (App (Var "/")  (Var "x")) (Var "y"))
-    , ("negate", ["x"],           App (Var "negate")  (Var "x"))
-    , ("==",     ["x", "y"],      App (App (Var "==") (Var "x")) (Var "y"))
-    , ("/=",     ["x", "y"],      App (App (Var "/=") (Var "x")) (Var "y"))
-    , ("<",      ["x", "y"],      App (App (Var "<")  (Var "x")) (Var "y"))
-    , ("<=",     ["x", "y"],      App (App (Var "<=") (Var "x")) (Var "y"))
-    , (">",      ["x", "y"],      App (App (Var ">")  (Var "x")) (Var "y"))
-    , (">=",     ["x", "y"],      App (App (Var ">=") (Var "x")) (Var "y"))
-    , ("&&",     ["x", "y"],      App (App (App (Var "if") (Var "x")) (Var "y")) (Var "False"))
-    , ("||",     ["x", "y"],      App (App (App (Var "if") (Var "x")) (Var "True")) (Var "y"))
-    , ("not",    ["x"],           App (App (App (Var "if") (Var "x")) (Var "False")) (Var "True"))
-    , ("if",     ["c", "t", "f"], App (App (App (Var "if") (Var "c")) (Var "t")) (Var "f"))
-    , ("False",  [],              Cons 1 0)
-    , ("True",   [],              Cons 2 0)
+    [ Combinator "+"      ["x", "y"]      $ App (App (Var "+")  (Var "x")) (Var "y")
+    , Combinator "-"      ["x", "y"]      $ App (App (Var "-")  (Var "x")) (Var "y")
+    , Combinator "*"      ["x", "y"]      $ App (App (Var "*")  (Var "x")) (Var "y")
+    , Combinator "/"      ["x", "y"]      $ App (App (Var "/")  (Var "x")) (Var "y")
+    , Combinator "negate" ["x"]           $ App (Var "negate")  (Var "x")
+    , Combinator "=="     ["x", "y"]      $ App (App (Var "==") (Var "x")) (Var "y")
+    , Combinator "/="     ["x", "y"]      $ App (App (Var "/=") (Var "x")) (Var "y")
+    , Combinator "<"      ["x", "y"]      $ App (App (Var "<")  (Var "x")) (Var "y")
+    , Combinator "<="     ["x", "y"]      $ App (App (Var "<=") (Var "x")) (Var "y")
+    , Combinator ">"      ["x", "y"]      $ App (App (Var ">")  (Var "x")) (Var "y")
+    , Combinator ">="     ["x", "y"]      $ App (App (Var ">=") (Var "x")) (Var "y")
+    , Combinator "&&"     ["x", "y"]      $ App (App (App (Var "if") (Var "x")) (Var "y")) (Var "False")
+    , Combinator "||"     ["x", "y"]      $ App (App (App (Var "if") (Var "x")) (Var "True")) (Var "y")
+    , Combinator "not"    ["x"]           $ App (App (App (Var "if") (Var "x")) (Var "False")) (Var "True")
+    , Combinator "if"     ["c", "t", "f"] $ App (App (App (Var "if") (Var "c")) (Var "t")) (Var "f")
+    , Combinator "False"  []              $ Cons 1 0
+    , Combinator "True"   []              $ Cons 2 0
     ]
 
 -- Instruction for each binary operator
@@ -119,8 +121,8 @@ allocSC heap (name, arity, instructions) = (heap', (name, addr)) where
 -- compiling f's body e in the environment created by substituting
 -- the actual parameters for the formal parameters
 -- SC(f x1 ... xn = e) = R(e) [x1 -> 0, ..., xn -> n - 1] n
-compileSC :: (Name, [Name], Expr) -> (Name, Int, GMCode)
-compileSC (name, env, body) = (name, length env, compileR (zip env [0..]) body)
+compileSC :: Declaration -> (Name, Int, GMCode)
+compileSC (Combinator name args body) = (name, length args, compileR (zip args [0..]) body)
 
 -- Scheme R[e] p d generates code which instantiates the expression
 -- e in environment p, for a supercombinator of arity d, and then
@@ -156,7 +158,7 @@ compileE env e = compileC env e ++ [Eval]
 
 -- Compile code for alternatives of a case expression
 compileD :: GMEnvironment -> GMCompiler -> [Alt] -> [(Int, GMCode)]
-compileD env comp = map $ \(tag, args, expr) ->
+compileD env comp = map $ \(PTag tag, args, expr) ->
     (tag, compileA comp (length args) (zip args [0..] ++ argOffset (length args) env) expr)
 
 -- Parameterized compilation scheme bracketed by Split and Slide

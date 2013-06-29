@@ -4,5 +4,5 @@ fix f = f (fix f);
 
 factorial f n = if (n < 2) 1 (n * f (n - 1));
 
-main = fix factorial 10
+main = fix factorial 10;
 
