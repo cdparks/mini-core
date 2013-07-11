@@ -70,18 +70,14 @@ instance Format Expr where
         case lookup op precByOp of
             Just prec' -> wrap expr where
                 expr = formatPrec prec' e1 <+> text op <+> formatPrec prec' e2
-                wrap | prec' > prec = id
-                     | otherwise    = parens
-            Nothing -> wrap expr where
-                expr = text op <+> formatPrec applyPrec e1 <+> formatPrec applyPrec e2
-                wrap | prec == applyPrec = parens
-                     | otherwise         = id
+                wrap | prec' >= prec = id
+                     | otherwise     = parens
+            Nothing ->
+                text op <+> formatPrec applyPrec e1 <+> formatPrec applyPrec e2
 
     -- Prefix application
-    formatPrec prec (App e1 e2) = wrap expr where
-        expr = formatPrec applyPrec e1 <+> formatPrec applyPrec e2
-        wrap | prec == applyPrec = parens
-             | otherwise         = id
+    formatPrec prec (App e1 e2) =
+        formatPrec applyPrec e1 <+> formatPrec applyPrec e2
 
     -- Let expression
     formatPrec _ (Let recursive bindings body) =
