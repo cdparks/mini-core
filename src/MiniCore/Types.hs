@@ -78,6 +78,15 @@ type ADef a b      = (a, Annotated a b)
 type AAlt a b      = (Pattern, [a], (Annotated a b))
 type AProgram a b  = [(Name, [a], Annotated a b)]
 
+{- Types for type checking -}
+
+infixr 9 :>>
+data Type = TyVar Name          -- Type variable has a name
+          | TyNum               -- Number trivially has TyNum
+          | TyData Name [Type]  -- Data type has a name and a list of types
+          | Type :>> Type       -- Function type has input and output types
+            deriving Show
+
 {- Heap types -}
 
 type Addr = Int
