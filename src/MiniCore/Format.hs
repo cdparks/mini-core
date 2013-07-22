@@ -53,6 +53,16 @@ instance Format Declaration where
 instance Format Constructor where
     format (name, components) = text name <+> join components
 
+-- Parenthesize if some condition is true
+parensIf :: Bool -> Doc -> Doc
+parensIf True  = parens
+parensIf False = id
+
+-- Useful down below
+isApp :: Expr -> Bool
+isApp (App _ _) = True
+isApp _         = False
+
 -- Convert expression into a formatted object keeping track
 -- of precedence
 instance Format Expr where
@@ -66,18 +76,15 @@ instance Format Expr where
     formatPrec _ (Cons tag arity) = text "Pack" <> braces (int tag <> comma <> int arity)
 
     -- Binary application
-    formatPrec prec (App (App (Var op) e1) e2) =
+    formatPrec prec (BinOp op e1 e2) =
         case lookup op precByOp of
-            Just prec' -> wrap expr where
-                expr = formatPrec prec' e1 <+> text op <+> formatPrec prec' e2
-                wrap | prec' >= prec = id
-                     | otherwise     = parens
-            Nothing ->
-                text op <+> formatPrec applyPrec e1 <+> formatPrec applyPrec e2
+            Just prec' -> parensIf (prec' < prec) $
+                formatPrec prec' e1 <+> text op <+> formatPrec prec' e2
+            Nothing -> error $ "Unrecognized infix operator " ++ op
 
     -- Prefix application
     formatPrec prec (App e1 e2) =
-        formatPrec applyPrec e1 <+> formatPrec applyPrec e2
+        formatPrec applyPrec e1 <+> parensIf (isApp e2) (formatPrec applyPrec e2)
 
     -- Let expression
     formatPrec _ (Let recursive bindings body) =

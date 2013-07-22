@@ -18,6 +18,7 @@ type Constructor = (Name, [Name])
 data Expr = Var Name
           | Num Int
           | Cons Int Int
+          | BinOp Name Expr Expr
           | App Expr Expr
           | Let IsRec [(Name, Expr)] Expr
           | Case Expr [Alt]

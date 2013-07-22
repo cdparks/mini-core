@@ -139,8 +139,7 @@ pLambda = do reservedOp "\\"
 -- Precedence/associativity for binary operators
 pBinOp :: Parser Expr
 pBinOp = buildExpressionParser binOpTable pApp where
-    applyBinOp op e1 e2 = App (App (Var op) e1) e2
-    parseOp op = reservedOp op >> return (applyBinOp op)
+    parseOp op = reservedOp op >> return (BinOp op)
     binOpTable = [ [ Infix (parseOp "*")  AssocLeft
                    , Infix (parseOp "/")  AssocLeft
                    ]
