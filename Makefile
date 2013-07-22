@@ -34,6 +34,25 @@ loud: mini-core
 	bin/mini-core examples/fold.core
 	bin/mini-core examples/freevar.core
 
+pretty: mini-core
+	bin/mini-core --prettyprint examples/arithmetic.core
+	bin/mini-core --prettyprint examples/factorial.core
+	bin/mini-core --prettyprint examples/fibonacci.core
+	bin/mini-core --prettyprint examples/infinite.core
+	bin/mini-core --prettyprint examples/fixedpoint.core
+	bin/mini-core --prettyprint examples/map.core
+	bin/mini-core --prettyprint examples/fold.core
+	bin/mini-core --prettyprint examples/freevar.core
+
+transform: mini-core
+	bin/mini-core --transform examples/arithmetic.core
+	bin/mini-core --transform examples/factorial.core
+	bin/mini-core --transform examples/fibonacci.core
+	bin/mini-core --transform examples/infinite.core
+	bin/mini-core --transform examples/fixedpoint.core
+	bin/mini-core --transform examples/map.core
+	bin/mini-core --transform examples/fold.core
+	bin/mini-core --transform examples/freevar.core
 clean:
 	cabal clean
 	rm -f bin/mini-core
