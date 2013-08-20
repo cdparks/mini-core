@@ -5,13 +5,13 @@ module MiniCore.Types where
 -- A program is a list of declarations
 type Program = [Declaration]
 
--- A declaration is a super-combinator or a data specification
+-- A declaration is a super-combinator or a data-type declaration
 data Declaration = Combinator Name [Name] Expr
-                 | DataSpec Name [Constructor]
+                 | Data Name [Name] [Constructor]
                    deriving Show
 
--- A constructor has a name and a list of components
-type Constructor = (Name, [Name])
+-- A constructor has a name and a function type
+type Constructor = (Name, Scheme)
 
 -- An expression is a variable, number, Cons (Pack) operation, application,
 -- let, case, or lambda expression.
@@ -81,12 +81,25 @@ type AProgram a b  = [(Name, [a], Annotated a b)]
 
 {- Types for type checking -}
 
-infixr 9 :>>
-data Type = TyVar Name          -- Type variable has a name
-          | TyNum               -- Number trivially has TyNum
-          | TyData Name [Type]  -- Data type has a name and a list of types
-          | Type :>> Type       -- Function type has input and output types
-            deriving Show
+-- Concrete type
+data Type = TVar Name
+          | TCon Name [Type]
+            deriving (Show, Eq)
+
+-- Universally quantified types
+data Scheme = Scheme [Name] Type
+              deriving (Show, Eq)
+
+-- Constructors for built-in types
+int = TCon "Int" []
+bool = TCon "Bool" []
+
+-- Constructor for function types
+arrow :: Type -> Type -> Type
+arrow a b = TCon "(->)" [a, b]
+
+-- Constructor for type variables
+var = TVar
 
 {- Heap types -}
 

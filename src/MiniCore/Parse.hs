@@ -61,25 +61,40 @@ pCore = do whiteSpace
            declarations <- many pDeclaration
            eof >> return declarations
 
--- Declaration -> DataSpec | Combinator
+-- Declaration -> Data | Combinator
 pDeclaration :: Parser Declaration
-pDeclaration =  pDataSpec
+pDeclaration =  pData
             <|> pCombinator
-            <?> "data specification or supercombinator"
+            <?> "data type or supercombinator"
 
--- DataSpec -> data name = Constructor [| Constructor]*;
-pDataSpec :: Parser Declaration
-pDataSpec = do reserved "data"
-               name <- uppercased
-               reservedOp "="
-               constructors <- sepBy1 pConstructor $ reservedOp "|"
-               semi >> return (DataSpec name constructors)
+-- Data -> data name TyVar* = Constructor [| Constructor]*;
+pData :: Parser Declaration
+pData = do reserved "data"
+           name <- uppercased
+           vars <- many identifier
+           reservedOp "="
+           let rtype = TCon name (map TVar vars)
+           constructors <- pConstructor vars rtype `sepBy1` reservedOp "|"
+           semi >> return (Data name vars constructors)
 
--- Constructor -> name [ args]*
-pConstructor :: Parser Constructor
-pConstructor = do name <- uppercased
-                  components <- many identifier
-                  return (name, components)
+-- Constructor -> name Type*
+pConstructor :: [Name] -> Type -> Parser Constructor
+pConstructor vars rtype = do name <- uppercased
+                             args <- many pType
+                             return (name, Scheme vars (foldr arrow rtype args))
+
+-- Type -> TyCon | TyVar | (TyApp)
+pType :: Parser Type
+pType =  (uppercased >>= return . (flip TCon) [])
+     <|> (identifier >>= return . TVar)
+     <|> parens pTypeApp
+     <?> "type variable or type constructor"
+
+-- TypeApp -> TyCon Type*
+pTypeApp :: Parser Type
+pTypeApp = do name <- uppercased
+              args <- many pType
+              return $ TCon name args
 
 -- Combinator -> var [ args]* = Expr;
 pCombinator :: Parser Declaration
@@ -122,8 +137,10 @@ pCase = do reserved "case"
            return $ Case expr alts
 
 -- Alt -> Constructor -> Expr
+--pAlt = do (name, components) <- pConstructor
 pAlt :: Parser Alt
-pAlt = do (name, components) <- pConstructor
+pAlt = do name <- uppercased
+          components <- many identifier
           reservedOp "->"
           expr <- pExpr
           return $ (PCon name, components, expr)
