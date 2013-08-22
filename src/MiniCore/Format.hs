@@ -45,13 +45,21 @@ instance Format Program where
 instance Format Declaration where
     format (Combinator name args expr) =
         text name <+> join args <+> text "=" <+> format expr <> semi
-    format (DataSpec name constructors) =
-        text "data" <+> text name <+> text "=" <+>
-        sep (intersperse (char '|') $ map format constructors) <> semi
+    format (Data name vars constructors) =
+        text "data" <+> text name <+>
+        join vars <+> text "=" <+>
+        sep (punctuate (text " |") $ map format constructors) <> semi
 
 -- Pretty-print a constructor
 instance Format Constructor where
-    format (name, components) = text name <+> join components
+    format (Constructor name components) =
+        text name <+> sep (map format components)
+
+-- Pretty-print a type
+instance Format Type where
+   format (TVar v) = text v
+   format (TCon n []) = text n
+   format (TCon n cs) = parens $ text n <+> sep (map format cs)
 
 -- Parenthesize if some condition is true
 parensIf :: Bool -> Doc -> Doc

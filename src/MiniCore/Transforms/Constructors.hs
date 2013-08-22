@@ -11,32 +11,28 @@ import Control.Monad.Reader
 
 -- Generate constructor combinators and use tags in case-expressions
 transformConstructors :: Program -> Program
-transformConstructors = convertCases . replaceDataSpecs
+transformConstructors = convertCases . replaceDataDecls
 
--- Strip out DataSpecs and convert their constructors into super-combinators
+-- Strip out Data declarations and convert their constructors into super-combinators
 -- Return new program and mapping from Constructor names to tags
-replaceDataSpecs :: Program -> (Program, ConstructorEnv)
-replaceDataSpecs program = (combinators' ++ combinators, cEnv state) where
-    (dataSpecs, combinators) = partition isDataSpec program
-    constructors = concatMap getConstructors dataSpecs
+replaceDataDecls :: Program -> (Program, ConstructorEnv)
+replaceDataDecls program = (combinators' ++ combinators, cEnv state) where
+    (dataDecls, combinators) = partition isData program
+    constructors = concatMap getConstructors dataDecls
     (combinators', state) = runState (mapM newCombinator constructors) initialEnv
 
--- After all the DataSpecs have been converted, use the ConstructorEnv
+-- After all the Data declarations have been converted, use the ConstructorEnv
 -- to convert case expressions from constructors to tags
 convertCases :: (Program, ConstructorEnv) -> Program
 convertCases (program, env) = map convert program where
     convert (Combinator name args body) = Combinator name args $
                                             runReader (walk body) env
 
--- Is declaration a DataSpec or a Combinator?
-isDataSpec :: Declaration -> Bool
-isDataSpec (DataSpec {}) = True
-isDataSpec _             = False
 
--- Grab all constructors out of a single DataSpec
+-- Grab all constructors out of a single Data declaration
 getConstructors :: Declaration -> [Constructor]
-getConstructors (DataSpec _ constructors) = constructors
-getConstructors _                         = [] -- Shouldn't happen
+getConstructors (Data _ _ constructors) = constructors
+getConstructors _                       = [] -- Shouldn't happen
 
 -- Map constructor names to (tag, arity)
 type ConstructorEnv = Map.Map Name (Int, Int)
@@ -64,19 +60,20 @@ initialEnv = ConstructorState
 -- with the constructor name. Raise error on duplicate constructor
 -- names.
 newCombinator :: Constructor -> State ConstructorState Declaration
-newCombinator (name, components) = do
+newCombinator (Constructor name components) = do
     env <- gets cEnv
     tag <- gets cTag
     let arity = length components
+        args  = map (("$x"++) . show) [1..arity]
     when (Map.member name env) $
         error $ "Duplicate constructor " ++ name
     modify $ \s -> s
         { cTag = tag + 1
         , cEnv = Map.insert name (tag, arity) env
         }
-    return $ Combinator name components
+    return $ Combinator name args
            $ foldl App (Cons tag arity)
-           $ map Var components
+           $ map Var args
 
 -- Walk each combinator body and replace Constructor names in
 -- case expressions with integer tags
