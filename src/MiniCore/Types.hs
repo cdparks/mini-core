@@ -10,6 +10,11 @@ data Declaration = Combinator Name [Name] Expr
                  | Data Name [Name] [Constructor]
                    deriving Show
 
+-- Is declaration a Data declaration or a Combinator?
+isData :: Declaration -> Bool
+isData (Data {}) = True
+isData _         = False
+
 -- A constructor has a name and a list of components
 data Constructor = Constructor Name [Type]
                    deriving Show
@@ -92,8 +97,8 @@ data Scheme = Scheme [Name] Type
               deriving (Show, Eq)
 
 -- Constructors for built-in types
-int = TCon "Int" []
-bool = TCon "Bool" []
+intTy = TCon "Int" []
+boolTy = TCon "Bool" []
 
 -- Constructor for function types
 arrow :: Type -> Type -> Type
