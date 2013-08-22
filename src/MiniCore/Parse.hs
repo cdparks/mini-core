@@ -73,15 +73,14 @@ pData = do reserved "data"
            name <- uppercased
            vars <- many identifier
            reservedOp "="
-           let rtype = TCon name (map TVar vars)
-           constructors <- pConstructor vars rtype `sepBy1` reservedOp "|"
+           constructors <- pConstructor `sepBy1` reservedOp "|"
            semi >> return (Data name vars constructors)
 
 -- Constructor -> name Type*
-pConstructor :: [Name] -> Type -> Parser Constructor
-pConstructor vars rtype = do name <- uppercased
-                             args <- many pType
-                             return (name, Scheme vars (foldr arrow rtype args))
+pConstructor :: Parser Constructor
+pConstructor = do name <- uppercased
+                  args <- many pType
+                  return $ Constructor name args
 
 -- Type -> TyCon | TyVar | (TyApp)
 pType :: Parser Type

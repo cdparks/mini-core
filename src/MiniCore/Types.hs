@@ -10,8 +10,9 @@ data Declaration = Combinator Name [Name] Expr
                  | Data Name [Name] [Constructor]
                    deriving Show
 
--- A constructor has a name and a function type
-type Constructor = (Name, Scheme)
+-- A constructor has a name and a list of components
+data Constructor = Constructor Name [Type]
+                   deriving Show
 
 -- An expression is a variable, number, Cons (Pack) operation, application,
 -- let, case, or lambda expression.
