@@ -8,6 +8,7 @@ import Text.ParserCombinators.Parsec
 import Text.ParserCombinators.Parsec.Expr
 import Text.ParserCombinators.Parsec.Language
 import qualified Text.ParserCombinators.Parsec.Token as Token
+import Control.Monad.Error
 
 -- Language definition for lexer
 languageDef =
@@ -49,11 +50,11 @@ uppercased = do whiteSpace
                 whiteSpace >> return (first:rest)
 
 -- Parser entry point
-parseCore :: String -> Program
+parseCore :: String -> Stage Program
 parseCore s =
     case parse pCore "core" s of
-        Left e  -> error $ show e
-        Right r -> r
+        Left e  -> throwError $ "ParseError: " ++ show e
+        Right r -> return r
 
 -- Program -> Declaration*
 pCore :: Parser Program

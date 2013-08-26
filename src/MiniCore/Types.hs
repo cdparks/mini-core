@@ -1,5 +1,17 @@
 module MiniCore.Types where
 
+import Control.Monad.Error
+import Control.Monad.Identity
+
+-- Represent a stage in the compiler as something that
+-- fails with an error message or produces a value
+type Stage = ErrorT String Identity
+
+runStage :: Show a => Stage a -> IO ()
+runStage s = case runIdentity (runErrorT s) of
+    Left error   -> putStrLn error
+    Right result -> putStrLn $ show result
+
 {- Core Expression types -}
 
 -- A program is a list of declarations

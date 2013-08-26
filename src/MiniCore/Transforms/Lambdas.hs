@@ -11,8 +11,8 @@ import Data.List (partition)
 
 -- Lift lambdas to top level as supercombinators and turn free variables into
 -- extra formal parameters
-liftLambdas :: Program -> Program
-liftLambdas = collectCombinators . rename . abstract . freeVars
+liftLambdas :: Program -> Stage Program
+liftLambdas = return . collectCombinators . rename . abstract . freeVars
 
 -- Wrap an integer used to generate new names
 data NameSupply = NameSupply { suffix :: Int }

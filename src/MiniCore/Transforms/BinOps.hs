@@ -6,8 +6,8 @@ import MiniCore.Types
 
 -- Build equivalent program that has no BinOp constructors
 -- They're only useful for pretty-printing
-removeBinOps :: Program -> Program
-removeBinOps = map walkDecl
+removeBinOps :: Program -> Stage Program
+removeBinOps = return . map walkDecl
   where
     walkDecl (Combinator name args body) = Combinator name args $ walk body
     walkDecl decl                        = decl

@@ -87,8 +87,8 @@ unaryOpBox = [("negate", Mkint)]
 type GMCompiler = GMEnvironment -> Expr -> GMCode
 
 -- Turn program into initial G-Machine state
-compile :: Program -> GMState
-compile program = GMState
+compile :: Program -> Stage GMState
+compile program = return GMState
     { gmOutput  = []
     , gmCode    = codeInit
     , gmStack   = []
@@ -97,7 +97,9 @@ compile program = GMState
     , gmHeap    = heap
     , gmGlobals = globals
     , gmStats   = statInit
-    } where (heap, globals) = buildInitialHeap program
+    }
+  where
+    (heap, globals) = buildInitialHeap program
 
 -- Push main and unwind
 codeInit :: GMCode
@@ -195,7 +197,6 @@ compileC env (Case e alts) = compileE env e ++ [Casejump $ compileD env compileE
 compileC env (Let recursive defs body)
     | recursive = compileLetrec compileC env defs body ++ [Slide $ length defs]
     | otherwise = compileLet    compileC env defs body ++ [Slide $ length defs]
-compileC env x = error $ "no pattern for " ++ show x ++ "?!"
 
 -- Generate code to construct each let binding and the let body.
 -- Code must remove bindings after body is evaluated.

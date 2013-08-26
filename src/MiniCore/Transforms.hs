@@ -8,6 +8,6 @@ import MiniCore.Transforms.Lambdas
 import MiniCore.Transforms.BinOps
 
 -- Program to Program transformations
-transform :: Program -> Program
-transform = liftLambdas . transformConstructors . removeBinOps
+transform :: Program -> Stage Program
+transform program = removeBinOps program >>= transformConstructors >>= liftLambdas
 
