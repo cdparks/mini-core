@@ -7,8 +7,13 @@ import Control.Monad.Identity
 -- fails with an error message or produces a value
 type Stage = ErrorT String Identity
 
-runStage :: Show a => Stage a -> IO ()
-runStage s = case runIdentity (runErrorT s) of
+-- Run compiler stage
+runStage :: Stage a -> Either String a
+runStage = runIdentity . runErrorT
+
+-- Run compiler stage and print result
+runStageIO :: Show a => Stage a -> IO ()
+runStageIO s = case runStage s of
     Left error   -> putStrLn error
     Right result -> putStrLn $ show result
 

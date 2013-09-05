@@ -26,28 +26,33 @@ fresh = do
     return $ "$" ++ show n
 
 -- Partially apply lambda expressions to pass in "free" variables
-abstract :: AProgram Name (Set.Set Name) -> Program
-abstract = map $ \(name, args, rhs) -> Combinator name args $ walk rhs where
-    walk :: Annotated Name (Set.Set Name) -> Expr
+abstract :: FVProgram -> Program
+abstract = map $ \(name, args, rhs) -> Combinator name args $ walk rhs
+  where
+    walk :: FVExpr -> Expr
     walk (free, AVar v) = Var v
     walk (free, ANum n) = Num n
     walk (free, ACons tag arity) = Cons tag arity
     walk (free, AApp e1 e2) = App (walk e1) (walk e2)
-    walk (free, ALet recursive defs body) = Let recursive defs' body' where
+    walk (free, ALet recursive defs body) = Let recursive defs' body'
+      where
         defs' = zip (bindersOf defs) $ map walk $ bindeesOf defs
         body' = walk body
-    walk (free, ACase expr alts) = Case expr' alts' where
+    walk (free, ACase expr alts) = Case expr' alts'
+      where
         walkAlt (tag, args, rhs) = (tag, args, walk rhs)
         expr' = walk expr
         alts' = map walkAlt alts
-    walk (free, ALambda args body) = foldl App sc $ map Var vars where
+    walk (free, ALambda args body) = foldl App sc $ map Var vars
+      where
         vars = Set.toList free
         sc = Let False [("sc", rhs)] (Var "sc")
         rhs = Lambda (vars ++ args) $ walk body
 
 -- Make each name in program unique
 rename :: Program -> Program
-rename program = evalState (mapM renameSC program) $ NameSupply 1 where
+rename program = evalState (mapM renameSC program) $ NameSupply 1
+  where
     renameSC (Combinator name args body) = do
         (args', env) <- newNames args
         body' <- walk env body
@@ -96,7 +101,8 @@ newNames args = do
 
 -- Find lambda expressions and promote them to supercombinators
 collectCombinators :: Program -> Program
-collectCombinators = concatMap $ \c -> execState (collectCombinator c) [] where
+collectCombinators = concatMap $ \c -> execState (collectCombinator c) []
+  where
     collectCombinator :: Declaration -> State [Declaration] ()
     collectCombinator (Combinator name args body) = do
         body' <- walk body
