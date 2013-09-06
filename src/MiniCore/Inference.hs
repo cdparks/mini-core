@@ -1,10 +1,13 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
 
 module Inference (
-    typecheck       
+    typecheck,
+    Mode
 ) where 
 
 import MiniCore.Types
+import MiniCore.Format
+import MiniCore.Transforms.StronglyConnectedComponents
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -14,8 +17,8 @@ import Control.Monad.State
 import Control.Monad.Identity
 
 -- Public compiler stage
-typecheck :: Program -> Stage Program
-typecheck = runTI . inferTypes
+typecheck :: Mode -> Program -> Stage Program
+typecheck mode = runTI mode . inferTypes
 
 {- Initial type-environment with primitive operations -}
 primOps = 
@@ -42,9 +45,14 @@ primOps =
 -- Mapping from names to schemes
 type TypeEnv = Map.Map Name Scheme
 
+data Mode = Quiet
+          | Trace
+            deriving Show
+
 -- Internal type-inference state
 data TIState = TIState
-    { tiNext :: Int                  -- Generate fresh type variables
+    { tiMode :: Mode                 -- Do we print types as we type-check?
+    , tiNext :: Int                  -- Generate fresh type variables
     , tiCons :: Map.Map Name Scheme  -- Constructor for case-expressions
     , tiData :: Map.Map Name Type    -- Available types
     }
@@ -235,32 +243,56 @@ tcExpr env (Case scrutinee alts) =
 
 -- Non-recursive Let
 tcExpr env (Let False bindings expr) =
-    do let names = map fst bindings
-           exprs = map snd bindings
+    do let (names, exprs) = unzip bindings
+
+       -- Infer monomorphic types for definitions
        (s, ts) <- tcAll env exprs
+
+       -- Generalize types and add to type-environment
        env'' <- addDecls (apply s env) names ts
+
+       -- Infer type for body
        (s', t) <- tcExpr env'' expr
+       --tcTrace (apply s' env'') names
        return (s' `scomp` s, t)
 
 -- Recursive Let
 tcExpr env (Let True bindings expr) =
-    do let names = map fst bindings
-           exprs = map snd bindings
+    do let (names, exprs) = unzip bindings
+
+       -- Add new type-variables for definitions
        schemes <- toSchemes names
+
+       -- Infer monomorphic types for definitions
        (s, ts) <- tcAll (schemes `Map.union` env) exprs
+
+       -- Apply substition to type-variables and unify
+       -- with inferred types
        let schemes' = apply s schemes
            env'     = apply s env
            ts'      = fromSchemes schemes' names
        s' <- unifyAll s (zip ts ts')
-       tcBody env' s' schemes' expr
+       let ts'' = fromSchemes (apply s' schemes') names
 
--- Type-check the body of a letrec expression
-tcBody :: TypeEnv -> Subst -> TypeEnv -> Expr -> TI (Subst, Type)
-tcBody env s schemes e =
-    do let ts = unSchemeAll $ apply s schemes
-       env' <- addDecls (apply s env) (Map.keys schemes) ts
-       (s', t) <- tcExpr env' e
-       return (s' `scomp` s, t)
+       -- Add types to environment and infer type for body
+       env'' <- addDecls (apply s' env') names ts''
+       (s'', t) <- tcExpr env'' expr
+       --tcTrace (apply s'' env'') names
+       return (s'' `scomp` s', t)
+     
+{-
+tcTrace :: TypeEnv -> [Name] -> TI ()
+tcTrace env names =
+    do mode <- gets tiMode
+       case mode of
+           Trace -> mapM_ traceType names
+           Quiet -> return ()
+  where
+    traceType name =
+        do case Map.lookup name env of
+             Just t  -> liftIO $ putStrLn (name ++ " :: " ++  prettyScheme t)
+             Nothing -> return ()
+-}
 
 -- Type-check each alternative in a case-expression
 tcAlts :: TypeEnv -> Type -> [Alt] -> TI (Subst, Type)
@@ -351,11 +383,12 @@ tcAll env (e:es) =
        return (s' `scomp` s, apply s' t : ts)
 
 -- Run type-inference and return either an error or some value
-runTI :: TI a -> Stage a
-runTI ti = evalStateT ti initState
+runTI :: Mode -> TI a -> Stage a
+runTI mode ti = evalStateT ti initState
   where
     initState = TIState
-        { tiNext = 0
+        { tiMode = mode
+        , tiNext = 0
         , tiCons = Map.fromList
                     [ ("True",  Scheme [] boolTy)
                     , ("False", Scheme [] boolTy)
@@ -450,8 +483,7 @@ inferTypes program =
     do let (decls, combinators) = partition isData program
            env = Map.fromList primOps
        env' <- checkDataTypes env decls
-       expr <- convertToExpr combinators
+       expr <- lift . simplifyExpr =<< convertToExpr combinators
        (s, t) <- tcExpr env' expr
-       --liftIO $ putStrLn $ "main :: " ++ prettyType (apply s t)
        return $ decls ++ combinators
 
