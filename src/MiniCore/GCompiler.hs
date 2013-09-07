@@ -7,7 +7,6 @@ import MiniCore.Heap
 
 import Data.List
 import Control.Arrow hiding ((<+>))
-import Debug.Trace
 
 -- Standard library
 prelude :: Program
@@ -111,12 +110,14 @@ statInit = GMStats 0 0
 
 -- Instantiate supercombinators in heap
 buildInitialHeap :: Program -> (GMHeap, GMGlobals)
-buildInitialHeap program = mapAccumL allocSC hInit compiled where
+buildInitialHeap program = mapAccumL allocSC hInit compiled
+  where
     compiled = map compileSC $ prelude ++ extraDefs ++ program ++ primitives
 
 -- Allocate a supercombinator and return the new heap
 allocSC :: GMHeap -> (Name, Int, GMCode) -> (GMHeap, (Name, Addr))
-allocSC heap (name, arity, instructions) = (heap', (name, addr)) where
+allocSC heap (name, arity, instructions) = (heap', (name, addr))
+  where
     (heap', addr) = hAlloc heap (NGlobal arity instructions)
 
 -- Compile supercombinator f with formal parameters x1...xn by
@@ -136,7 +137,8 @@ compileR env (Let recursive defs body)
 compileR env e@(App (App (App (Var "if") cond) t) f) =
     compileB env cond ++ [Cond (compileR env t) (compileR env f)]
 compileR env (Case e alts) = compileE env e ++ [Casejump $ compileD env compileR alts]
-compileR env e = compileE env e ++ [Update n, Pop n, Unwind] where
+compileR env e = compileE env e ++ [Update n, Pop n, Unwind]
+  where
     n = length env
 
 -- Scheme E[e] p compiles code that evaluates an expression e to
@@ -201,7 +203,8 @@ compileC env (Let recursive defs body)
 -- Generate code to construct each let binding and the let body.
 -- Code must remove bindings after body is evaluated.
 compileLet :: GMCompiler -> GMEnvironment -> [(Name, Expr)] -> Expr -> GMCode
-compileLet comp env defs body = compileDefs env defs ++ comp env' body where
+compileLet comp env defs body = compileDefs env defs ++ comp env' body
+  where
     env' = compileArgs env defs
 
 -- Generate code to construct each definition in defs
@@ -213,7 +216,8 @@ compileDefs env ((name, expr):defs) = compileC env expr ++ compileDefs (argOffse
 -- Code must remove bindings after body is evaluated.
 -- Bindings start as null pointers and must update themselves on evaluation.
 compileLetrec :: GMCompiler -> GMEnvironment -> [(Name, Expr)] -> Expr -> GMCode
-compileLetrec comp env defs body = [Alloc n] ++ compileRecDefs (n - 1) env' defs ++ comp env' body where
+compileLetrec comp env defs body = [Alloc n] ++ compileRecDefs (n - 1) env' defs ++ comp env' body
+  where
     env' = compileArgs env defs
     n = length defs
 
@@ -225,7 +229,8 @@ compileRecDefs n env ((name, expr):defs) = compileC env expr ++ [Update n] ++ co
 
 -- Generate stack offsets for local bindings
 compileArgs :: GMEnvironment -> [(Name, Expr)] -> GMEnvironment
-compileArgs env defs = zip (map fst defs) (reverse [0..n-1]) ++ argOffset n env where
+compileArgs env defs = zip (map fst defs) (reverse [0..n - 1]) ++ argOffset n env
+  where
     n = length defs
 
 -- Adjust the stack offsets in the environment by n
