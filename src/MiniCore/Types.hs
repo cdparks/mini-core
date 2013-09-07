@@ -5,17 +5,19 @@ import Control.Monad.Identity
 
 -- Represent a stage in the compiler as something that
 -- fails with an error message or produces a value
-type Stage = ErrorT String Identity
+type Stage = ErrorT String IO
 
 -- Run compiler stage
-runStage :: Stage a -> Either String a
-runStage = runIdentity . runErrorT
+runStage :: Stage a -> IO (Either String a)
+runStage = runErrorT
 
 -- Run compiler stage and print result
 runStageIO :: Show a => Stage a -> IO ()
-runStageIO s = case runStage s of
-    Left error   -> putStrLn error
-    Right result -> putStrLn $ show result
+runStageIO s = 
+    do result <- runStage s
+       case result of
+           Left error   -> putStrLn error
+           Right result -> putStrLn $ show result
 
 {- Core Expression types -}
 
