@@ -17,8 +17,7 @@ type Gen a = StateT ConstructorState Stage a
 transformConstructors :: Program -> Stage Program
 transformConstructors program = evalStateT run initialEnv
   where
-    run = do program' <- replaceDataDecls program
-             convertCases program'
+    run = replaceDataDecls program >>= convertCases
 
 -- Strip out Data declarations and convert their constructors into super-combinators
 -- Return new program and mapping from Constructor names to tags
@@ -32,10 +31,10 @@ replaceDataDecls program =
 -- After all the Data declarations have been converted, use the ConstructorEnv
 -- to convert case expressions from constructors to tags
 convertCases :: Program -> Gen Program
-convertCases program = mapM convert program
+convertCases = mapM convert
   where
     convert (Combinator name args body) =
-        do body' <- walk body
+        do body' <- convertExpr body
            return $ Combinator name args body'
 
 -- Grab all constructors out of a single Data declaration
@@ -69,59 +68,60 @@ initialEnv = ConstructorState
 -- with the constructor name. Raise error on duplicate constructor
 -- names.
 newCombinator :: Constructor -> Gen Declaration
-newCombinator (Constructor name components) = do
-    env <- gets cEnv
-    tag <- gets cTag
-    let arity = length components
-        args  = map (("$x"++) . show) [1..arity]
-    when (Map.member name env) $
-        error $ "Duplicate constructor " ++ name
-    modify $ \s -> s
-        { cTag = tag + 1
-        , cEnv = Map.insert name (tag, arity) env
-        }
-    return $ Combinator name args
-           $ foldl App (Cons tag arity)
-           $ map Var args
+newCombinator (Constructor name components) =
+    do env <- gets cEnv
+       tag <- gets cTag
+       let arity = length components
+           args  = map (("$x"++) . show) [1..arity]
+       when (Map.member name env) $
+          throwError $ "Duplicate constructor " ++ name
+       modify $ \s -> s
+           { cTag = tag + 1
+           , cEnv = Map.insert name (tag, arity) env
+           }
+       return $ Combinator name args
+              $ foldl' App (Cons tag arity)
+              $ map Var args
 
 -- Walk each combinator body and replace Constructor names in
 -- case expressions with integer tags
-walk :: Expr -> Gen Expr
-walk (App e1 e2) = do
-    e1' <- walk e1
-    e2' <- walk e2
-    return $ App e1' e2'
-walk (Let recursive bindings body) = do
-    bindings' <- walkBindings bindings
-    body'     <- walk body
-    return $ Let recursive bindings' body'
-walk (Lambda args body) = do
-    body' <- walk body
-    return $ Lambda args body
-walk (Case body alts) = do
-    alts' <- walkAlts alts
-    body' <- walk body
-    return $ Case body' alts'
-walk x = return x
+convertExpr :: Expr -> Gen Expr
+convertExpr (App e1 e2) =
+    do e1' <- convertExpr e1
+       e2' <- convertExpr e2
+       return $ App e1' e2'
+convertExpr (Let recursive bindings body) =
+    do bindings' <- convertBindings bindings
+       body'     <- convertExpr body
+       return $ Let recursive bindings' body'
+convertExpr (Lambda args body) =
+    do body' <- convertExpr body
+       return $ Lambda args body
+convertExpr (Case body alts) =
+    do alts' <- convertAlts alts
+       body' <- convertExpr body
+       return $ Case body' alts'
+convertExpr x = return x
 
 -- Replace Constructor names in let-bindings
-walkBindings :: [(Name, Expr)] -> Gen [(Name, Expr)]
-walkBindings bindings = do
-    let (names, exprs) = unzip bindings
-    exprs' <- mapM walk exprs
-    return $ zip names exprs'
+convertBindings :: [(Name, Expr)] -> Gen [(Name, Expr)]
+convertBindings bindings =
+    do let (names, exprs) = unzip bindings
+       exprs' <- mapM convertExpr exprs
+       return $ zip names exprs'
 
 -- Replace Constructor names in case alternatives
-walkAlts :: [Alt] -> Gen [Alt]
-walkAlts alts = mapM walkAlt alts where
-    walkAlt (PCon constructor, args, expr) = do
-        env <- gets cEnv
-        (tag, arity) <- case Map.lookup constructor env of
-                            Just x  -> return x
-                            Nothing -> throwError $ "No declaration found for " ++ constructor
-        expr' <- if length args /= arity then
-                    throwError $ "Constructor " ++ constructor ++
-                                 " has " ++ show arity ++ " components"
-                 else walk expr
-        return (PTag tag, args, expr')
+convertAlts :: [Alt] -> Gen [Alt]
+convertAlts = mapM convertAlt
+  where
+    convertAlt (PCon constructor, args, expr) =
+        do env <- gets cEnv
+           (tag, arity) <- case Map.lookup constructor env of
+                              Just x  -> return x
+                              Nothing -> throwError $ "No declaration found for " ++ constructor
+           expr' <- if length args /= arity then
+                      throwError $ "Constructor " ++ constructor ++
+                                   " has " ++ show arity ++ " components"
+                    else convertExpr expr
+           return (PTag tag, args, expr')
 

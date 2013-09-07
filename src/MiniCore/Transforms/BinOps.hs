@@ -22,11 +22,14 @@ walk (Lambda args body)      = Lambda args $ walk body
 walk expr                    = expr
 
 walkBindings :: [(Name, Expr)] -> [(Name, Expr)]
-walkBindings bindings = zip names exprs' where
+walkBindings bindings = zip names exprs'
+  where
     (names, exprs) = unzip bindings
     exprs' = map walk exprs
 
 walkAlts :: [Alt] -> [Alt]
-walkAlts alts = map walkAlt alts where
-    walkAlt (PCon constructor, args, expr) = (PCon constructor, args, walk expr)
+walkAlts alts = map walkAlt alts
+  where
+    walkAlt (PCon constructor, args, expr) =
+        (PCon constructor, args, walk expr)
 
