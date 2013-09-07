@@ -39,16 +39,16 @@ class Format a where
 
 -- Pretty-print list of declarations
 instance Format Program where
-    format = sep . map format
+    format = sep . punctuate semi . map format
 
 -- Pretty-print a declaration (data or combinator)
 instance Format Declaration where
     format (Combinator name args expr) =
-        text name <+> join args <+> text "=" <+> format expr <> semi
+        text name <+> join args <+> text "=" <+> format expr
     format (Data name vars constructors) =
         text "data" <+> text name <+>
         join vars <+> text "=" <+>
-        sep (punctuate (text " |") $ map format constructors) <> semi
+        sep (punctuate (text " |") $ map format constructors)
 
 -- Pretty-print a constructor
 instance Format Constructor where
@@ -107,9 +107,10 @@ instance Format Expr where
         text "of" <+> lbrace $$ nest 2 (format alts) $$ rbrace
 
     -- Lambda expression
-    formatPrec _ (Lambda args body) =
-        parens $ text "\\" <> join args <+>
-        text "->" <+> formatPrec lowestPrec body
+    formatPrec prec (Lambda args body) =
+        parensIf (prec > lowestPrec) $
+            text "\\" <> join args <+>
+            text "->" <+> formatPrec lowestPrec body
 
 -- Format name = expression pairs
 instance Format [(Name, Expr)] where

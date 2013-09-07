@@ -59,7 +59,7 @@ parseCore s =
 -- Program -> Declaration*
 pCore :: Parser Program
 pCore = do whiteSpace
-           declarations <- many pDeclaration
+           declarations <- pDeclaration `sepEndBy1` semi
            eof >> return declarations
 
 -- Declaration -> Data | Combinator
@@ -75,7 +75,7 @@ pData = do reserved "data"
            vars <- many identifier
            reservedOp "="
            constructors <- pConstructor `sepBy1` reservedOp "|"
-           semi >> return (Data name vars constructors)
+           return (Data name vars constructors)
 
 -- Constructor -> name Type*
 pConstructor :: Parser Constructor
@@ -102,7 +102,7 @@ pCombinator = do name <- identifier
                  args <- many identifier
                  reservedOp "="
                  expr <- pExpr
-                 semi >> return (Combinator name args expr)
+                 return (Combinator name args expr)
 
 -- Atom -> Let | BinOp | Case | Lambda 
 pExpr :: Parser Expr
