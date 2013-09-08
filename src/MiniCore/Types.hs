@@ -176,6 +176,9 @@ data Instruction = Pushglobal Name          -- Push address of global on stack
                  | Split Int                -- Destructure constructor into components for alternative-body
                  | Cond GMCode GMCode       -- Simplified case-jump. Check top-of-V-stack to branch
                  | Print                    -- Add value to output
+                 | LParen                   -- Write open paren to output
+                 | RParen                   -- Write close paren to output
+                 | Space                    -- Write space to output
                    deriving Show
 
 -- Execution stack
@@ -212,6 +215,9 @@ data GMStats = GMStats
     , gmCollections :: Int
     }
 
+-- Names of constructors in tag order
+type GMCons = [Name]
+
 -- Complete machine state
 data GMState = GMState
     { gmOutput  :: GMOutput
@@ -222,6 +228,7 @@ data GMState = GMState
     , gmHeap    :: GMHeap
     , gmGlobals :: GMGlobals
     , gmStats   :: GMStats
+    , gmCons    :: GMCons
     }
 
 -- Simple instance for now

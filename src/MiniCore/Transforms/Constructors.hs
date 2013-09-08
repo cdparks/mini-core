@@ -5,6 +5,7 @@ module MiniCore.Transforms.Constructors (
 import MiniCore.Types
 
 import Data.List
+import Data.Function
 import qualified Data.Map as Map
 import Control.Monad.State
 import Control.Monad.Error
@@ -14,8 +15,11 @@ import Control.Monad.Error
 type Gen a = StateT ConstructorState Stage a
 
 -- Generate constructor combinators and use tags in case-expressions
-transformConstructors :: Program -> Stage Program
-transformConstructors program = evalStateT run initialEnv
+transformConstructors :: Program -> Stage ([Name], Program)
+transformConstructors program =
+    do (program', state) <- runStateT run initialEnv
+       let env = cEnv state
+       return (toCons env, program')
   where
     run = replaceDataDecls program >>= convertCases
 
@@ -45,6 +49,10 @@ getConstructors _                       = [] -- Shouldn't happen
 -- Map constructor names to (tag, arity)
 type ConstructorEnv = Map.Map Name (Int, Int)
 type ConstructorTag = Int
+
+-- Get constructors in tag order
+toCons :: ConstructorEnv -> [Name]
+toCons = map fst . sortBy (compare `on` snd) . Map.toList
 
 -- Map constructor names to (tag, arity). Increment the tag when
 -- adding a new constructor.

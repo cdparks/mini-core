@@ -3,12 +3,14 @@
 module MiniCore.Format (
     format,
     formatLast,
+    formatStateOutput,
     formatState,
     formatResults,
     formatFirstStep,
     formatLastStep,
     formatStep,
-    precByOp
+    precByOp,
+    Doc (..)
 ) where
 
 import MiniCore.Types
@@ -134,7 +136,10 @@ instance Format Pattern where
 
 -- Print output from last state
 formatLast :: [GMState] -> Doc
-formatLast = text . intercalate " " . reverse . gmOutput . last
+formatLast = formatStateOutput . last
+
+formatStateOutput :: GMState -> Doc
+formatStateOutput = text . concat . reverse . gmOutput
 
 -- Format global definitions, all states, and final output
 formatResults :: [GMState] -> Doc

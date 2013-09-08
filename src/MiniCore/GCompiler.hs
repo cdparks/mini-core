@@ -10,16 +10,7 @@ import Control.Arrow hiding ((<+>))
 
 -- Standard library
 prelude :: Program
-prelude = [ Combinator "I"  ["x"] $ Var "x"
-          , Combinator "K"  ["x", "y"] $ Var "x"
-          , Combinator "K1" ["x", "y"] $ Var "y"
-          , Combinator "S"  ["f", "g", "x"] $
-                App (App (Var "f") (Var "x")) (App (Var "g") (Var "x"))
-          , Combinator "compose" ["f", "g", "x"] $
-                App (Var "f") (App (Var "g") (Var "x"))
-          , Combinator "twice" ["f"] $
-                App (App (Var "compose") (Var "f")) (Var "f")
-          ]
+prelude = []
 
 -- Extra definitions to add to the initial global environment
 extraDefs = []
@@ -86,9 +77,12 @@ unaryOpBox = [("negate", Mkint)]
 type GMCompiler = GMEnvironment -> Expr -> GMCode
 
 -- Turn program into initial G-Machine state
-compile :: Program -> Stage GMState
-compile program = return GMState
-    { gmOutput  = []
+-- cons is a list of Constructor names such that
+-- cons !! tag -> Constructor name for (Cons tag arity)
+compile :: ([Name], Program) -> Stage GMState
+compile (cons, program) = return GMState
+    { gmCons    = cons
+    , gmOutput  = []
     , gmCode    = codeInit
     , gmStack   = []
     , gmDump    = []
