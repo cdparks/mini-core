@@ -406,12 +406,12 @@ tcExpr env (Let True bindings expr) =
 
 -- Type-check each alternative in a case-expression
 tcAlts :: TypeEnv -> Type -> [Alt] -> TI (Subst, Type)
-tcAlts env rtype alts = 
+tcAlts env scrut alts =
     do t <- fresh
        foldM combine (idSubst, TVar t) alts
   where
     combine (s, t) alt =
-        do (s', t') <- tcAlt env rtype alt
+        do (s', t') <- tcAlt env scrut alt
            s'' <- unify s' (t, t')
            return (s'' `scomp` s, t')
 
@@ -431,7 +431,7 @@ tcAlt env t (PCon name, names, body) =
            bindings = zip names schemes
            env'     = Map.fromList bindings `Map.union` env
        (s', t') <- tcExpr env' body
-       return (s', t')
+       return (s' `scomp` s, t')
   where
     -- Break a constructor into its components and return type
     components :: Type -> ([Type], Type)
