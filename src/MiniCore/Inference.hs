@@ -1,8 +1,8 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
 
-module Inference (
+module MiniCore.Inference (
     typecheck,
-    Mode
+    Mode (..)
 ) where 
 
 import MiniCore.Types
