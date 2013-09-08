@@ -299,6 +299,9 @@ print' =
     doPrint (NGlobal _ _) =
         modify $ \s -> s { gmOutput = "<function>":gmOutput s }
 
+    doPrint (NApp _ _) =
+        modify $ \s -> s { gmOutput = "<function>":gmOutput s }
+
     doPrint x = throwError $ "tried to print " ++ show x
 
     printN n = concat $ take n $ repeat [Space, Eval, Print]
