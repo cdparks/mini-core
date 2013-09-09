@@ -104,7 +104,7 @@ convertExpr (Let recursive bindings body) =
        return $ Let recursive bindings' body'
 convertExpr (Lambda args body) =
     do body' <- convertExpr body
-       return $ Lambda args body
+       return $ Lambda args body'
 convertExpr (Case body alts) =
     do alts' <- convertAlts alts
        body' <- convertExpr body
