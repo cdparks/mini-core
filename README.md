@@ -5,13 +5,13 @@ Mini-Core started as an implementation of the Core language described in [Implem
 ## Usage
 mini-core compiles a file to G-code and executes it in a virtual G-Machine.
 
-Usage: mini-core [OPTION...] file
-  -h  --help         Print usage and exit
-      --show-parse   Show program after parsing
-      --show-types   Show types after type-checking
-      --show-simple  Show program after constructor generation and lambda lifting
-      --show-g-code  Show G-code after compilation
-      --show-states  Print each machine state as program executes
+    Usage: mini-core [OPTION...] file
+      -h  --help         Print usage and exit
+          --show-parse   Show program after parsing
+          --show-types   Show types after type-checking
+          --show-simple  Show program after constructor generation and lambda lifting
+          --show-g-code  Show G-code after compilation
+          --show-states  Print each machine state as program executes
 
 ## Example Program
 A program is just a sequence of supercombinators. Execution proceeds by reducing the supercombinator `main`. Simple algebraic data types are supported using tagged constructors.
