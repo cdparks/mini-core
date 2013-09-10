@@ -1,5 +1,5 @@
 -- Map cube across list of numbers
-data List = Cons x xs | Nil;
+data List a = Cons a (List a) | Nil;
 
 map f ls = case ls of {
     Cons x xs -> Cons (f x) (map f xs);

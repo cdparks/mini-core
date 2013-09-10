@@ -35,24 +35,35 @@ loud: mini-core
 	bin/mini-core examples/freevar.core
 
 pretty: mini-core
-	bin/mini-core --prettyprint examples/arithmetic.core
-	bin/mini-core --prettyprint examples/factorial.core
-	bin/mini-core --prettyprint examples/fibonacci.core
-	bin/mini-core --prettyprint examples/infinite.core
-	bin/mini-core --prettyprint examples/fixedpoint.core
-	bin/mini-core --prettyprint examples/map.core
-	bin/mini-core --prettyprint examples/fold.core
-	bin/mini-core --prettyprint examples/freevar.core
+	bin/mini-core --show-parse examples/arithmetic.core
+	bin/mini-core --show-parse examples/factorial.core
+	bin/mini-core --show-parse examples/fibonacci.core
+	bin/mini-core --show-parse examples/infinite.core
+	bin/mini-core --show-parse examples/fixedpoint.core
+	bin/mini-core --show-parse examples/map.core
+	bin/mini-core --show-parse examples/fold.core
+	bin/mini-core --show-parse examples/freevar.core
+
+typecheck: mini-core
+	bin/mini-core --show-types examples/arithmetic.core
+	bin/mini-core --show-types examples/factorial.core
+	bin/mini-core --show-types examples/fibonacci.core
+	bin/mini-core --show-types examples/infinite.core
+	bin/mini-core --show-types examples/fixedpoint.core
+	bin/mini-core --show-types examples/map.core
+	bin/mini-core --show-types examples/fold.core
+	bin/mini-core --show-types examples/freevar.core
 
 transform: mini-core
-	bin/mini-core --transform examples/arithmetic.core
-	bin/mini-core --transform examples/factorial.core
-	bin/mini-core --transform examples/fibonacci.core
-	bin/mini-core --transform examples/infinite.core
-	bin/mini-core --transform examples/fixedpoint.core
-	bin/mini-core --transform examples/map.core
-	bin/mini-core --transform examples/fold.core
-	bin/mini-core --transform examples/freevar.core
+	bin/mini-core --show-simple examples/arithmetic.core
+	bin/mini-core --show-simple examples/factorial.core
+	bin/mini-core --show-simple examples/fibonacci.core
+	bin/mini-core --show-simple examples/infinite.core
+	bin/mini-core --show-simple examples/fixedpoint.core
+	bin/mini-core --show-simple examples/map.core
+	bin/mini-core --show-simple examples/fold.core
+	bin/mini-core --show-simple examples/freevar.core
+
 clean:
 	cabal clean
 	rm -f bin/mini-core

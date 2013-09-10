@@ -1,5 +1,6 @@
 -- Simple arithmetic example
 
+compose f g x = f (g x);
 double x = 2 * x;
 square x = x * x;
 

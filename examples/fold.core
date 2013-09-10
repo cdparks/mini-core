@@ -1,6 +1,6 @@
 -- Compute sum of list
 
-data List = Cons x xs | Nil;
+data List a = Cons a (List a) | Nil;
 
 foldr op last ls = case ls of {
     Cons x xs -> op x (foldr op last xs);
