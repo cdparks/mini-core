@@ -1,7 +1,11 @@
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+
 module MiniCore.Types where
 
 import Control.Monad.Error
-import Control.Monad.Identity
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import qualified Data.List as List
 
 -- Represent a stage in the compiler as something that
 -- fails with an error message or produces a value
@@ -18,6 +22,23 @@ runStageIO s =
        case result of
            Left error   -> putStrLn error
            Right result -> putStrLn $ show result
+
+-- Print something during execution
+trace :: (Show a) => a -> Stage ()
+trace = traceStr . show
+
+-- Print String during execution
+traceStr :: String -> Stage ()
+traceStr = liftIO . putStrLn
+
+-- Print something for stage when prompted
+traceStage :: (Show a) => String -> Bool -> a -> Stage ()
+traceStage stage cond x =
+    do let divider = "===================="
+       when cond $
+           do traceStr $ divider ++ " " ++ stage ++ " " ++ divider
+              trace x
+              traceStr $ "\n"
 
 {- Core Expression types -}
 
@@ -125,6 +146,56 @@ arrow a b = TCon "(->)" [a, b]
 
 -- Constructor for type variables
 var = TVar
+
+-- Substitute type for name
+type Subst = Map.Map Name Type
+
+-- Mapping from names to schemes
+type TypeEnv = Map.Map Name Scheme
+
+-- If something is type-like, we can apply a substitution to it
+-- and get a set of its type-variables
+class Types a where
+    apply :: Subst -> a -> a
+    tvars :: a -> Set.Set Name
+
+instance Types Type where
+    apply s (TVar n) = case Map.lookup n s of
+                         Just t  -> t
+                         Nothing -> TVar n
+    apply s (TCon n ts) = TCon n $ map (apply s) ts
+
+    tvars (TVar n) = Set.singleton n
+    tvars (TCon n ts) = foldr Set.union Set.empty (map tvars ts)
+
+-- Special case; pretty-printed types should have the type-variables in order
+-- which tvars won't necessarily maintain
+tvarsOrdered :: Type -> [Name]
+tvarsOrdered (TVar n) = [n]
+tvarsOrdered (TCon n ts) = foldr List.union [] (map tvarsOrdered ts)
+
+-- tvars doesn't return universally quantified type-variables
+instance Types Scheme where
+    apply s (Scheme vs t) =
+        let s' = foldr Map.delete s vs
+        in Scheme vs (apply s' t)
+
+    tvars (Scheme vs t) = tvars t `Set.difference` Set.fromList vs
+
+-- Extend operations to lists of things that are type-like
+instance Types a => Types [a] where
+    apply s = map (apply s)
+    tvars   = foldr Set.union Set.empty . map tvars
+
+instance Types TypeEnv where
+    apply s env = Map.map (apply s) env
+    tvars env = tvars (Map.elems env)
+
+-- Compose substitions by applying s1 to s2 and then
+-- taking their union
+scomp :: Subst -> Subst -> Subst
+scomp s1 s2 = let s2' = Map.map (apply s1) s2
+              in s2' `Map.union` s1
 
 {- Heap types -}
 
