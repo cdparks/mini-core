@@ -2,23 +2,23 @@
 
 module MiniCore.Inference (
     typecheck,
-    Mode (..)
 ) where 
 
 import MiniCore.Types
 import MiniCore.Format
 import MiniCore.Transforms.StronglyConnectedComponents
 
+import Data.Function
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.List
+import qualified Data.List as List
 import Control.Monad.Error
 import Control.Monad.State
 import Control.Monad.Identity
 
 -- Public compiler stage
-typecheck :: Mode -> Program -> Stage Program
-typecheck mode = runTI mode . inferTypes
+typecheck :: Program -> Stage ([(Name, Scheme)], Program)
+typecheck = runTI . inferTypes
 
 {- Initial type-environment with primitive operations -}
 primOps = 
@@ -42,19 +42,12 @@ primOps =
 
 {- Internal types for type-checking -}
 
--- Mapping from names to schemes
-type TypeEnv = Map.Map Name Scheme
-
-data Mode = Quiet
-          | Trace
-            deriving Show
-
 -- Internal type-inference state
 data TIState = TIState
     { tiDecl :: Maybe Declaration    -- Typechecking Context
-    , tiMode :: Mode                 -- Do we print types as we type-check?
     , tiNext :: Int                  -- Generate fresh type variables
     , tiCons :: TypeEnv              -- Constructor for case-expressions
+    , tiTEnv :: TypeEnv              -- Named entities to show types for
     , tiData :: Map.Map Name Type    -- Available types
     }
 
@@ -78,6 +71,13 @@ setNamedExpr name expr =
              _                -> Combinator name [] expr
        setContext decl
 
+-- Save types of named values in type environment
+saveEnv :: TypeEnv -> [Name] -> TI ()
+saveEnv env' names =
+    do env <- gets tiTEnv
+       let specified = fromKeys env' names
+       modify $ \s -> s { tiTEnv = specified `Map.union` env }
+
 -- Throw an error after adding context information
 raise :: String -> TI a
 raise msg =
@@ -86,21 +86,6 @@ raise msg =
              Just decl -> msg ++ "\nin:\n\t" ++ show (format decl)
              Nothing   -> msg
        throwError $ "Type Error:\n\t" ++ error
-    
--- Print types of specified names in environment if in Trace mode
-tcTrace :: TypeEnv -> [Name] -> TI ()
-tcTrace env names = tcTraceEnv $ fromKeys env names
-
--- Print all types in environment if in Trace mode
-tcTraceEnv :: TypeEnv -> TI ()
-tcTraceEnv env = 
-    do mode <- gets tiMode
-       case mode of
-           Trace -> mapM_ traceType $ Map.toList env
-           Quiet -> return ()
-  where
-    traceType (name, t) =
-        liftIO $ putStrLn (name ++ " :: " ++  prettyScheme t)
 
 {- Utilities -}
 
@@ -114,102 +99,6 @@ fromKeys m (x:xs) =
     case Map.lookup x m of
         Just v  -> Map.insert x v (fromKeys m xs)
         Nothing -> fromKeys m xs
-
-{- Dealing with type variable substitution -}
-
--- Substitute type in for name
-type Subst = Map.Map Name Type
-
--- If something is type-like, we can apply a substitution to it
--- and get a set of its type-variables
-class Types a where
-    apply :: Subst -> a -> a
-    tvars :: a -> Set.Set Name
-
-instance Types Type where
-    apply s (TVar n) = case Map.lookup n s of
-                         Just t  -> t
-                         Nothing -> TVar n
-    apply s (TCon n ts) = TCon n $ map (apply s) ts
-
-    tvars (TVar n) = Set.singleton n
-    tvars (TCon n ts) = foldr Set.union Set.empty (map tvars ts)
-
--- Special case; pretty-printTyed types should have the type-variables in order
--- which tvars won't necessarily maintain
-tvarsOrdered :: Type -> [Name]
-tvarsOrdered (TVar n) = [n]
-tvarsOrdered (TCon n ts) = foldr union [] (map tvarsOrdered ts)
-
--- tvars doesn't return universally quantified type-variables
-instance Types Scheme where
-    apply s (Scheme vs t) = let s' = foldr Map.delete s vs
-                            in Scheme vs (apply s' t)
-
-    tvars (Scheme vs t) = tvars t `Set.difference` Set.fromList vs
-
--- Extend operations to lists of things that are type-like
-instance Types a => Types [a] where
-    apply s = map (apply s)
-    tvars   = foldr Set.union Set.empty . map tvars
-
-instance Types TypeEnv where
-    apply s env = Map.map (apply s) env
-    tvars env = tvars (Map.elems env)
-
--- Compose substitions by applying s1 to s2 and then
--- taking their union
-scomp :: Subst -> Subst -> Subst
-scomp s1 s2 = let s2' = Map.map (apply s1) s2
-              in s2' `Map.union` s1
-
-{- Pretty-printing for types -}
-
--- Infinite list of prettier type-variables for printTying
-prettyVars :: [String]
-prettyVars = alphas ++ alphaNums
-  where alphas =
-            do char <- ['a'..'z']
-               return [char]
-        alphaNums =
-            do num  <- [1..]
-               char <- ['a'..'z']
-               return $ char:show num
-
--- Pretty-print a universally-quantified type
-prettyScheme :: Scheme -> String
-prettyScheme (Scheme vars t) =
-    let env = zip (nub (vars ++ tvarsOrdered t)) prettyVars
-    in prettyForall env vars ++ prettyType env t
-
--- Print a type using a mapping from the actual
--- type-variables to pretty type-variables
-prettyType :: [(Name, Name)] -> Type -> String
-prettyType env t = loop t
-  where
-    loop (TVar n) =
-        case lookup n env of
-            Just x  -> x
-            Nothing -> "?"
-    loop (TCon n []) = n
-    loop (TCon "(->)" [a, b]) =
-        "(" ++ loop a ++ " -> " ++ loop b ++ ")"
-    loop (TCon n xs) = "(" ++ n ++ " " ++ intercalate " " (map loop xs) ++ ")"
-
--- Print universally quantified type variables if there are any
-prettyForall :: [(Name, Name)] -> [Name] -> String
-prettyForall env [] = ""
-prettyForall env xs = "forall " ++ intercalate " " (map get xs) ++ ". "
-  where
-    get n =
-        case lookup n env of
-            Just x  -> x
-            Nothing -> "?"
-
--- Pretty-print all type-schemes in a type-environment
-prettyEnv :: TypeEnv -> String
-prettyEnv env = intercalate "\n" (map pretty (Map.toList env)) ++ "\n"
-  where pretty (name, scheme) = name ++ " :: " ++ prettyScheme scheme
 
 {- Unification -}
 
@@ -375,9 +264,11 @@ tcExpr env (Let False bindings expr) =
        -- Generalize types and add to type-environment
        env'' <- addDecls (apply s env) names ts
 
+       -- Save types of named values
+       saveEnv  env'' names
+
        -- Infer type for body
        (s', t) <- tcExpr env'' expr
-       tcTrace (apply s' env'') names
        return (s' `scomp` s, t)
 
 -- Recursive Let
@@ -398,10 +289,14 @@ tcExpr env (Let True bindings expr) =
        s' <- unifyAll s (zip ts ts')
        let ts'' = fromSchemes (apply s' schemes') names
 
-       -- Add types to environment and infer type for body
+       -- Generalize types and add to environment
        env'' <- addDecls (apply s' env') names ts''
+
+       -- Save types of named values
+       saveEnv env'' names
+
+       --Infer type for body
        (s'', t) <- tcExpr env'' expr
-       tcTrace (apply s'' env'') names
        return (s'' `scomp` s', t)
 
 -- Type-check each alternative in a case-expression
@@ -488,13 +383,13 @@ addDecls env ns ts =
 {- Build entry point to type inference engine -}
 
 -- Run type-inference and return either an error or some value
-runTI :: Mode -> TI a -> Stage a
-runTI mode ti = evalStateT ti initState
+runTI :: TI a -> Stage a
+runTI ti = evalStateT ti initState
   where
     initState = TIState
         { tiDecl = Nothing
-        , tiMode = mode
         , tiNext = 0
+        , tiTEnv = Map.empty
         , tiCons = Map.fromList
                     [ ("True",  Scheme [] boolTy)
                     , ("False", Scheme [] boolTy)
@@ -505,16 +400,17 @@ runTI mode ti = evalStateT ti initState
                     ]
         }
 
--- Convert a list of declarations into a single letrec
+-- Convert a list of declarations into a single letrec and return
+-- list of all top-level declarations
 -- Each non-nullary binding is turned into a lambda
 -- This is also where we check for the existence of main
-convertToExpr :: [Declaration] -> TI Expr
+convertToExpr :: [Declaration] -> TI ([Name], Expr)
 convertToExpr combinators =
     do (bindings, main) <- foldM convert ([], Nothing) combinators
-       case (bindings, main) of
-           ([],       Just main) -> return main
-           (bindings, Just main) -> return $ Let True bindings main
-           (_,        Nothing)   -> raise "Must specify nullary function main"
+       let names = map fst bindings
+       case main of
+           Just main -> return (names, Let True bindings main)
+           Nothing   -> raise "Must specify nullary function main"
   where
     -- Redeclaring main is an error
     convert (xs, Just main) (Combinator "main" []   expr)
@@ -536,15 +432,18 @@ convertToExpr combinators =
     convert (xs, main) (Combinator name args expr)
         = return ((name, Lambda args expr):xs, main)
 
--- Infer types and return the untransformed program
-inferTypes :: Program -> TI Program
+-- Infer types and return top-level types and untransformed program
+inferTypes :: Program -> TI ([(Name, Scheme)], Program)
 inferTypes program =
-    do let (decls, combinators) = partition isData program
+    do let (decls, combinators) = List.partition isData program
            env = Map.fromList primOps
        env' <- checkDataTypes env decls
-       expr <- lift . simplifyExpr =<< convertToExpr combinators
-       (s, t) <- tcExpr env' expr
+       (names, expr) <- convertToExpr combinators
+       expr' <- lift $ simplifyExpr expr
+       (s, t) <- tcExpr env' expr'
+       env <- gets tiTEnv
        cons <- gets tiCons
-       tcTraceEnv cons
-       return $ decls ++ combinators
+       let topLevel = fromKeys env names `Map.union` cons
+           sorted = List.sortBy (compare `on` fst) $ Map.toList topLevel
+       return $ (sorted, decls ++ combinators)
 
