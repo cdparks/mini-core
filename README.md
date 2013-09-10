@@ -1,23 +1,24 @@
 # Mini-Core
 ## Overview
-Mini-Core is an implementation of the Core language described in [Implementing Functional Languages: A Tutorial](http://research.microsoft.com/en-us/um/people/simonpj/papers/pj-lester-book/) by Simon Peyton Jones & David Lester. I'm following the book fairly closely, but I'm using Haskell instead of Miranda. I've diverged slightly by adding some concrete syntax for specifying data constructors and matching on them in case-expressions.
+Mini-Core started as an implementation of the Core language described in [Implementing Functional Languages: A Tutorial](http://research.microsoft.com/en-us/um/people/simonpj/papers/pj-lester-book/) by Simon Peyton Jones & David Lester. I've diverged slightly by adding let-polymorphic type inference and some concrete syntax for specifying and matching on data constructors.
 
 ## Usage
 mini-core compiles a file to G-code and executes it in a virtual G-Machine.
 
-    Usage: mini-core [OPTION...] file
-      -v  --verbose      Print each machine state as program executes
-      -s  --step         Single-step through program execution (enter -> next, q -> quit)
-      -p  --prettyprint  Just show program after parsing
-      -t  --transform    Just show program after constructor generation and lambda lifting
-      -h  --help         Print usage and exit
+Usage: mini-core [OPTION...] file
+  -h  --help         Print usage and exit
+      --show-parse   Show program after parsing
+      --show-types   Show types after type-checking
+      --show-simple  Show program after constructor generation and lambda lifting
+      --show-g-code  Show G-code after compilation
+      --show-states  Print each machine state as program executes
 
 ## Example Program
 A program is just a sequence of supercombinators. Execution proceeds by reducing the supercombinator `main`. Simple algebraic data types are supported using tagged constructors.
 
 ```haskell
 -- A List data specification; specifies the shape of our constructors
-data List = Cons x xs | Nil;
+data List a = Cons a (List a) | Nil;
 
 -- mini-core is non-strict; we can construct infinite data structures
 infinite x = Cons x (infinite (x + 1));
@@ -36,11 +37,24 @@ map f ls = case ls of {
     Nil       -> Nil;
 };
 
--- Print the squares of the first 10 elements of an infinite list
--- (Now with lambdas!)
-main = map (\x -> x * x) (take 10 (infinite 0))
+-- Print the squares of the first 5 elements of an infinite list
+-- Like Haskell, we use \ to introduce an anonymous function
+main = map (\x -> x * x) (take 5 (infinite 0))
 ```
 
-## Warning
-At the moment, mini-core is practically untyped, so it will let you attempt to do <i>silly things</i>.
+Running the compiler on this program produces the following output:
+
+    (Cons 0 (Cons 1 (Cons 4 (Cons 9 (Cons 16 Nil)))))
+
+With `--show-types` we also get the following output:
+
+    ==================== Type Inference ====================
+    Cons :: forall a. a -> List a -> List a
+    False :: Bool
+    Nil :: forall a. List a
+    True :: Bool
+    infinite :: Int -> List Int
+    main :: List Int
+    map :: forall a b. (a -> b) -> List a -> List b
+    take :: forall a. Int -> List a -> List a
 
