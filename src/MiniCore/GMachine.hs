@@ -9,7 +9,6 @@ import MiniCore.Heap
 
 import Data.List
 import Data.Maybe
-import Debug.Trace
 import Control.Monad.State
 import Control.Monad.Error
 
@@ -24,17 +23,19 @@ type Inspect = Eval GMState
 
 -- Public interface to GMachine takes an initial state and yield
 -- a final state
-execute :: GMState -> Stage GMState
-execute state = execStateT evaluate state
+execute :: Bool -> GMState -> Stage GMState
+execute loud state = execStateT (evaluate loud) state
 
 -- Move from state to state until final state is reached
-evaluate :: Inspect
-evaluate =
+evaluate :: Bool -> Inspect
+evaluate loud =
     do state <- get
+       when loud $
+           lift $ trace $ formatState state
        if isFinal state then
            return state
        else
-           step >> doAdmin >> evaluate
+           step >> doAdmin >> evaluate loud
 
 -- Update machine statistics. Collect garbage if heap has grown
 -- too large
