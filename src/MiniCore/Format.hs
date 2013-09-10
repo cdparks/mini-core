@@ -2,13 +2,9 @@
 
 module MiniCore.Format (
     format,
-    formatLast,
     formatStateOutput,
     formatState,
-    formatResults,
-    formatFirstStep,
-    formatLastStep,
-    formatStep,
+    formatDefs,
     precByOp,
     Doc (..)
 ) where
@@ -57,11 +53,61 @@ instance Format Constructor where
     format (Constructor name components) =
         text name <+> sep (map format components)
 
--- Pretty-print a type
+{- Pretty-printing types -}
+
+-- Infinite list of prettier type-variables
+prettyVars :: [String]
+prettyVars = alphas ++ alphaNums
+  where alphas =
+            do char <- ['a'..'z']
+               return [char]
+        alphaNums =
+            do num  <- [1..]
+               char <- ['a'..'z']
+               return $ char:show num
+
+-- Find name in env (or just use name if not found) and convert to text
+lookupText :: [(Name, Name)] -> Name -> Doc
+lookupText env n = maybe (text n) text (lookup n env)
+
+-- Print a type using a mapping from the actual
+-- type-variables to pretty type-variables
+prettyType :: [(Name, Name)] -> Type -> Doc
+prettyType env t = loop False False t
+  where
+    loop _ _ (TVar n) = lookupText env n
+    loop _ _ (TCon n []) = text n
+
+    -- If first parameter is True, parent was (->), and current node
+    -- is the left-hand side of (->) and may need to be parenthesized
+    loop parent _ (TCon "(->)" [a, b]) =
+        parensIf parent (loop True False a <+> text "->" <+> loop False False b)
+
+    -- If second parameter is True, parent was a non-unary constructor
+    -- and current node may need to be parameterized
+    loop _ parent (TCon n xs) =
+        parensIf parent (text n <+> sep (map (loop False True) xs))
+
+-- Print universally quantified type variables if there are any
+prettyForall :: [(Name, Name)] -> [Name] -> Doc
+prettyForall env [] = empty
+prettyForall env xs = text "forall" <+> sep (map (lookupText env) xs) <> text "."
+
+-- Pretty-print a concrete type
 instance Format Type where
-   format (TVar v) = text v
-   format (TCon n []) = text n
-   format (TCon n cs) = parens $ text n <+> sep (map format cs)
+    format = prettyType []
+
+-- Pretty-print a universally quantified type
+instance Format Scheme where
+    format (Scheme vars t) =
+        let env = zip (nub (vars ++ tvarsOrdered t)) prettyVars
+        in prettyForall env vars <+> prettyType env t
+
+-- Pretty-print a mapping of Names to Schemes
+instance Format [(Name, Scheme)] where
+    format = vcat . map combine
+      where
+        combine (name, scheme) = text name <+> text "::" <+> format scheme
 
 -- Parenthesize if some condition is true
 parensIf :: Bool -> Doc -> Doc
@@ -134,45 +180,14 @@ instance Format Pattern where
 
 {- Pretty-print machine states -}
 
--- Print output from last state
-formatLast :: [GMState] -> Doc
-formatLast = formatStateOutput . last
-
+-- Format output component of state
 formatStateOutput :: GMState -> Doc
 formatStateOutput = text . concat . reverse . gmOutput
 
--- Format global definitions, all states, and final output
-formatResults :: [GMState] -> Doc
-formatResults states =
-    formatDefs states $$
-    formatTransitions states $$
-    formatOutput states
-
--- Format first step for incremental output
-formatFirstStep :: GMState -> Doc
-formatFirstStep state = formatDefs [state]
-
--- Format intermediate step
-formatStep :: GMState -> Doc
-formatStep = formatState
-
--- Format last step for incremental output
-formatLastStep :: GMState -> Doc
-formatLastStep state = formatLast [state]
-
 -- Format global definitions
-formatDefs :: [GMState] -> Doc
-formatDefs (state:_) = text "Definitions" <> colon $$ nest 4 defs where
+formatDefs :: GMState -> Doc
+formatDefs state = text "Definitions" <> colon $$ nest 4 defs where
     defs = vcat $ map (formatSC state) $ gmGlobals state
-
--- Format each transition
-formatTransitions :: [GMState] -> Doc
-formatTransitions states = text "Transitions" <> colon $$ nest 4 trans where
-    trans = vcat $ map formatState states
-
--- Format final output
-formatOutput :: [GMState] -> Doc
-formatOutput states = text "Output" <> colon <+> formatLast states
 
 -- Format a single supercombinator
 formatSC :: GMState -> (Name, Addr) -> Doc
