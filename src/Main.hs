@@ -2,6 +2,7 @@ module Main where
 
 import MiniCore.Types
 import MiniCore.Parse
+import MiniCore.Inference
 import MiniCore.Transforms
 import MiniCore.GCompiler
 import MiniCore.GMachine
@@ -12,81 +13,72 @@ import System.Console.GetOpt
 import System.Environment
 import System.Exit
 import Control.Monad
+import Control.Monad.State
 import Data.List
 
 -- Compile and run program
-run :: String -> String
-run = show . formatLast . evaluate . compile . transform . parseCore
+run :: Flags -> String -> Stage Doc
+run flags program =
+    do parsed <- parseCore program
+       traceStage "Parsing" (traceParse flags) $ format parsed
 
--- Compile and run program printing intermediate states
-debug :: String -> String
-debug = show . formatResults . evaluate . compile . transform . parseCore
+       (types, checked) <- typecheck parsed
+       traceStage "Type Inference" (traceCheck flags) $ format types
 
--- Compile program and generate initial state
-startStep :: String -> IO ()
-startStep program = do
-    let state = single $ compile $ transform $ parseCore program
-    putStrLn $ show $ formatFirstStep state
-    step state
+       (cons, transformed) <- transform checked
+       traceStage "Transforms" (traceTrans flags) $ format transformed
 
--- Just print program after parsing
-prettyprint :: String -> String
-prettyprint = show . format . parseCore
+       state <- compile (cons, transformed)
+       traceStage "Compilation" (traceComp flags) $ formatDefs state
 
--- Just print program after transformations
-transformed :: String -> String
-transformed = show . format . transform . parseCore
+       state' <- execute (traceExec flags) state
+       return $ formatStateOutput state'
 
--- Step from one state to the next 
-step :: GMState -> IO ()
-step state = do
-    putStrLn $ show $ formatStep state
-    if isFinal state
-        then putStrLn $ show $ formatLastStep state
-        else ask state
+-- Which stages should print debug information?
+data Flags = Flags
+    { traceParse :: Bool
+    , traceCheck :: Bool
+    , traceTrans :: Bool
+    , traceComp  :: Bool
+    , traceExec  :: Bool
+    } deriving Show
 
--- Ask if user wants to continue
-ask :: GMState -> IO ()
-ask state = do
-    putStr "Next/Quit? [enter/q]:"
-    hFlush stdout
-    line <- getLine
-    case line of
-        "q"    -> return ()
-        ""     -> step $ single state
-        _      -> ask state
-
--- Execution flag
-data Flag = Normal
-          | Step
-          | Verbose
-          | PrettyPrint
-          | Transform
-            deriving Show
+-- By default, just run the program
+defaultFlags :: Flags
+defaultFlags = Flags
+    { traceParse = False
+    , traceCheck = False
+    , traceTrans = False
+    , traceComp  = False
+    , traceExec  = False
+    }
 
 -- Context is file to execute and execution flag
 data Context = Context
-    { sFlag :: Flag
-    , sFile :: String
+    { sFlags :: Flags
+    , sFile  :: String
     } deriving Show
 
 -- Specify action for each option
-options :: [OptDescr (Flag -> IO Flag)]
-options = [ Option ['v'] ["verbose"]
-                (NoArg $ return . const Verbose)
-                "Print each machine state as program executes"
-          , Option ['s'] ["step"]
-                (NoArg $ return . const Step)
-                "Single-step through program execution (enter -> next, q -> quit)"
-          , Option ['p'] ["prettyprint"]
-                (NoArg $ return . const PrettyPrint)
-                "Just show program after parsing"
-          , Option ['t'] ["transform"]
-                (NoArg $ return . const Transform)
-                "Just show program after constructor generation and lambda lifting"
-          , Option ['h'] ["help"]
+options :: [OptDescr (Flags -> IO Flags)]
+options = [ Option ['h'] ["help"]
                 (NoArg . const $ usage [])
                 "Print usage and exit"
+          , Option [] ["show-parse"]
+                (NoArg (\f -> return f { traceParse = True }))
+                "Show program after parsing"
+          , Option [] ["show-types"]
+                (NoArg (\f -> return f { traceCheck = True }))
+                "Show types after type-checking"
+          , Option [] ["show-simple"]
+                (NoArg (\f -> return f { traceTrans = True }))
+                "Show program after constructor generation and lambda lifting"
+          , Option [] ["show-g-code"]
+                (NoArg (\f -> return f { traceComp = True }))
+                "Show G-code after compilation"
+          , Option [] ["show-states"]
+                (NoArg (\f -> return f { traceExec = True }))
+                "Print each machine state as program executes"
           ]
 
 -- Parse options and generate execution context
@@ -98,13 +90,13 @@ getContext = do
         (_, _, errors)       -> usage errors
 
 -- Generate context from parsed arguments
-configure :: [String] -> [Flag -> IO Flag] -> IO Context
+configure :: [String] -> [Flags -> IO Flags] -> IO Context
 configure files actions = do
-    flag <- foldl (>>=) (return Normal) actions
+    flags <- foldl (>>=) (return defaultFlags) actions
     file <- case files of
         []     -> usage ["Must specify at least one file"]
         file:_ -> return file
-    return $ Context { sFlag = flag, sFile = file }
+    return $ Context { sFlags = flags, sFile = file }
 
 -- Print usage and exit
 usage :: [String] -> IO a
@@ -116,12 +108,7 @@ usage errors = do
 
 main :: IO ()
 main = do
-    Context { sFlag = flag, sFile = file } <- getContext
+    Context { sFlags = flags, sFile = file } <- getContext
     program <- readFile file
-    case flag of
-        Normal      -> putStrLn $ run program
-        Verbose     -> putStrLn $ debug program
-        PrettyPrint -> putStrLn $ prettyprint program
-        Transform   -> putStrLn $ transformed program
-        Step        -> startStep program
+    runStageIO $ run flags program
 
