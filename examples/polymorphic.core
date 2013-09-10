@@ -1,0 +1,30 @@
+data List a = Cons a (List a) | Nil;
+
+data Pair a b = Pair a b;
+
+length ls = case ls of {
+    Cons x xs -> 1 + length xs;
+    Nil       -> 0;
+};
+
+ls1 = Cons 1 (Cons 2 (Cons 5 (Cons 12 Nil)));
+
+ls2 = Cons (Pair 1 True) (Cons (Pair 4 False) Nil);
+
+fst x = case x of {
+    Pair a _ -> a;
+};
+
+snd x = case x of {
+    Pair _ b -> b;
+};
+
+square x = x * x;
+
+map f ls = case ls of {
+    Nil       -> Nil;
+    Cons x xs -> Cons (f x) (map f xs);
+};
+
+main = length (map snd ls2) + length (map square ls1);
+
