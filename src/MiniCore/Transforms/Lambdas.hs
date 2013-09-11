@@ -56,7 +56,7 @@ abstract = mapM abstract'
       do body' <- walk body
          let vars = Set.toList free
              rhs  = Lambda (vars ++ args) body'
-             sc   = Let False [("$sc", rhs)] (Var "$sc")
+             sc   = Let False [(lambda, rhs)] (Var lambda)
          return $ foldl App sc $ map Var vars
 
 -- Wrap an integer used to generate new names
@@ -66,26 +66,39 @@ data NameSupply = NameSupply { suffix :: Int }
 type Lift a = StateT NameSupply Stage a
 
 -- Generate a new name from the NameSupply
-fresh :: Lift Name
-fresh = do
+fresh :: Name -> Lift Name
+fresh name = do
     n <- gets suffix
     modify $ \s -> s { suffix = n + 1 }
-    return $ "$" ++ show n
+    return $ name ++ "_$" ++ show n
+
+-- Prefix for lifted lambdas
+lambda = "$lambda"
+
+-- Do we need to rename this variable?
+shouldReplace :: Map.Map Name Name -> Name -> Bool
+shouldReplace env name = name `Map.member` env || name == lambda
 
 -- Take a list of old names and return a list of new names and a mapping
 -- from the old names to the new names
-newNames :: [Name] -> Lift ([Name], Map.Map Name Name)
-newNames args =
-    do args' <- replicateM (length args) fresh
-       return (args', Map.fromList $ zip args args')
+newNames :: Map.Map Name Name -> [Name] -> Lift ([Name], Map.Map Name Name)
+newNames env []     = return ([], env)
+newNames env (x:xs) =
+    do arg <- if shouldReplace env x then
+                  fresh x
+              else
+                  return x
+       let env' = Map.insert x arg env
+       (args, env') <- newNames env' xs
+       return (arg:args, env')
 
--- Make each name in program unique
+-- Rename variables in the program that might clash
 rename :: Program -> Stage Program
 rename program = evalStateT (mapM renameSC program) $ NameSupply 1
   where
     renameSC :: Declaration -> Lift Declaration
     renameSC (Combinator name args body) =
-        do (args', env) <- newNames args
+        do (args', env) <- newNames Map.empty args
            body' <- walk env body
            return $ Combinator name args' body'
 
@@ -107,13 +120,13 @@ rename program = evalStateT (mapM renameSC program) $ NameSupply 1
            return $ App e1' e2'
 
     walk env (Lambda args body) =
-        do (args', env') <- newNames args
+        do (args', env') <- newNames env args
            body' <- walk (env' `Map.union` env) body
            return $ Lambda args' body'
 
     walk env (Let recursive defs body) =
         do let binders = bindersOf defs
-           (binders', env') <- newNames binders
+           (binders', env') <- newNames env binders
            let bodyEnv = env' `Map.union` env
            body' <- walk bodyEnv body
            let rhsEnv
@@ -129,7 +142,7 @@ rename program = evalStateT (mapM renameSC program) $ NameSupply 1
 
     walkAlt :: Map.Map Name Name -> Alt -> Lift Alt
     walkAlt env (tag, args, rhs) =
-        do (args', env') <- newNames args
+        do (args', env') <- newNames env args
            rhs' <- walk (env' `Map.union` env) rhs
            return $ (tag, args', rhs')
 
