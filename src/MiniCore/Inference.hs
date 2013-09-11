@@ -380,6 +380,38 @@ addDecls env ns ts =
     do schemes <- mapM (generalize env) ts
        return $ Map.fromList (zip ns schemes) `Map.union` env
 
+{- Ensure there are no duplicate bindings in current scope -}
+
+-- Only really interesting case is Let(rec)
+findDups :: Expr -> TI Expr
+findDups (Let recursive bindings expr) =
+    do let (names, exprs) = unzip bindings
+       _ <- foldM scan Set.empty names
+       exprs' <- mapM findDups exprs
+       expr' <- findDups expr
+       return $ Let recursive (zip names exprs') expr'
+  where
+    scan seen name =
+        do when (name `Set.member` seen) $
+               raise $ "Duplicate binding for " ++ quote name
+           return $ Set.insert name seen
+findDups (Lambda args e) =
+    do e' <- findDups e
+       return $ Lambda args e'
+findDups (App e1 e2) =
+    do e1' <- findDups e1
+       e2' <- findDups e2
+       return $ App e1' e2'
+findDups (Case scrutinee alts) =
+    do scrutinee' <- findDups scrutinee
+       alts' <- mapM findDupsAlt alts
+       return $ Case scrutinee' alts'
+  where
+    findDupsAlt (PCon name, names, body) =
+        do body' <- findDups body
+           return $ (PCon name, names, body')
+findDups e = return e
+
 {- Build entry point to type inference engine -}
 
 -- Run type-inference and return either an error or some value
@@ -435,15 +467,32 @@ convertToExpr combinators =
 -- Infer types and return top-level types and untransformed program
 inferTypes :: Program -> TI ([(Name, Scheme)], Program)
 inferTypes program =
-    do let (decls, combinators) = List.partition isData program
+    do -- Break program into data declarations and supercombinators
+       let (decls, combinators) = List.partition isData program
            env = Map.fromList primOps
+
+       -- Check data declarations first
        env' <- checkDataTypes env decls
+
+       -- Convert program into a single letrec and find top-level names
        (names, expr) <- convertToExpr combinators
-       expr' <- lift $ simplifyExpr expr
-       (s, t) <- tcExpr env' expr'
+
+       -- Check for duplicate bindings
+       expr' <- findDups expr
+
+       -- Turn flat letrec into a nested let(rec) where each bind-group is
+       -- as small as possible
+       expr'' <- lift $ simplifyExpr expr'
+
+       -- Type-check expression
+       (s, t) <- tcExpr env' expr''
+
+       -- Get inferred types for constructors and top-level names and sort them
        env <- gets tiTEnv
        cons <- gets tiCons
        let topLevel = fromKeys env names `Map.union` cons
            sorted = List.sortBy (compare `on` fst) $ Map.toList topLevel
+
+       -- Return types and (mostly) untransformed program
        return $ (sorted, decls ++ combinators)
 
