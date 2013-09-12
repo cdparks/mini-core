@@ -15,7 +15,7 @@ languageDef =
     emptyDef { Token.commentStart    = "{-"
              , Token.commentEnd      = "-}"
              , Token.commentLine     = "--"
-             , Token.identStart      = letter <|> char '_'
+             , Token.identStart      = lower <|> char '_'
              , Token.identLetter     = alphaNum <|> char '_' <|> char '\''
              , Token.reservedNames   = [ "data"
                                        , "let"
@@ -181,10 +181,11 @@ pApp :: Parser Expr
 pApp = many1 pAtom >>= return . makeSpine where
     makeSpine (x:xs) = foldl App x xs
 
--- Atom -> var | num | ( Expr )
+-- Atom -> Constructor | var | num | ( Expr )
 pAtom :: Parser Expr
-pAtom =   (identifier >>= return . Var)
+pAtom =   (uppercased >>= return . Var)
+      <|> (identifier >>= return . Var)
       <|> (natural >>= return . Num . fromInteger)
       <|> parens pExpr
-      <?> "identifier, number, or parenthesized expression"
+      <?> "constructor, identifier, number, or parenthesized expression"
 
