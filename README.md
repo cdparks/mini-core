@@ -58,3 +58,9 @@ With `--show-types` we also get the following output:
     map :: forall a b. (a -> b) -> List a -> List b
     take :: forall a. Int -> List a -> List a
 
+## References
+* [Implementing Functional Languages: A Tutorial](http://research.microsoft.com/en-us/um/people/simonpj/papers/pj-lester-book/) by Simon Peyton Jones & David Lester
+* [The Implementation of Functional Programming Languages](http://research.microsoft.com/en-us/um/people/simonpj/papers/slpj-book-1987/index.htm) by Simon Peyton Jones
+* [Algorithm W Step By Step](http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.65.7733) by Martin Grabmuller
+* [Typing Haskell in Haskell](http://web.cecs.pdx.edu/~mpj/thih/) by Mark P. Jones
+
