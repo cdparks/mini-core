@@ -229,7 +229,19 @@ formatShortStack stack n =
 
 -- Format list of instructions
 formatCode :: GMCode -> Doc
-formatCode code = text "Code" <> colon $$ nest 4 (vcat $ map (text . show) code)
+formatCode code = text "Code" <> colon $$ nest 4 (formatInstructions code)
+  where
+    formatInstructions = vcat . map formatInstruction
+    formatInstruction (Casejump branches) = text "Casejump" $$ nest 4 (sep $ map formatBranch branches)
+    formatInstruction (Cond t f) =
+        text "Cond" $$ nest 4
+        (vcat [ text "True"  <> colon <+> formatInstructions t
+              , text "False" <> colon <+> formatInstructions f
+              ])
+    formatInstruction x = text (show x)
+    formatBranch (tag, code) = int tag <> colon <+> formatInstructions code
+
+
 
 -- Format first n instructions
 formatShortCode :: GMCode -> Int -> Doc
