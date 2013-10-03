@@ -8,13 +8,6 @@ import MiniCore.Heap
 import Data.List
 import Control.Arrow hiding ((<+>))
 
--- Standard library
-prelude :: Program
-prelude = []
-
--- Extra definitions to add to the initial global environment
-extraDefs = []
-
 -- Uncompiled Primitives
 primitives :: Program
 primitives =
@@ -35,6 +28,8 @@ primitives =
     , Combinator "if"     ["c", "t", "f"] $ App (App (App (Var "if") (Var "c")) (Var "t")) (Var "f")
     , Combinator "False"  []              $ Cons 1 0
     , Combinator "True"   []              $ Cons 2 0
+    , Combinator "$"      ["f", "a"]      $ App (Var "f") (Var "a")
+    , Combinator "."      ["f", "g", "x"] $ App (Var "f") (App (Var "g") (Var "x"))
     ]
 
 -- Instruction for each binary operator
@@ -106,7 +101,7 @@ statInit = GMStats 0 0
 buildInitialHeap :: Program -> (GMHeap, GMGlobals)
 buildInitialHeap program = mapAccumL allocSC hInit compiled
   where
-    compiled = map compileSC $ prelude ++ extraDefs ++ program ++ primitives
+    compiled = map compileSC $ program ++ primitives
 
 -- Allocate a supercombinator and return the new heap
 allocSC :: GMHeap -> (Name, Int, GMCode) -> (GMHeap, (Name, Addr))

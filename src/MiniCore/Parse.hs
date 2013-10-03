@@ -25,7 +25,11 @@ languageDef =
                                        , "of"
                                        , "Pack"
                                        ]
-             , Token.reservedOpNames = "|":"\\":"=":"->":(map fst precByOp)
+             , Token.reservedOpNames = [ "|"
+                                       , "\\"
+                                       , "="
+                                       , "->"
+                                       ] ++ map fst precByOp
              }
 
 -- Generate lexer and bind names that we'll use
@@ -157,7 +161,10 @@ pLambda = do reservedOp "\\"
 pBinOp :: Parser Expr
 pBinOp = buildExpressionParser binOpTable pApp where
     parseOp op = reservedOp op >> return (BinOp op)
-    binOpTable = [ [ Infix (parseOp "*")  AssocLeft
+    binOpTable = [ [ Infix (parseOp ".")  AssocRight
+                   ]
+                 ,
+                   [ Infix (parseOp "*")  AssocLeft
                    , Infix (parseOp "/")  AssocLeft
                    ]
                  , [ Infix (parseOp "+")  AssocLeft
@@ -173,6 +180,8 @@ pBinOp = buildExpressionParser binOpTable pApp where
                  , [ Infix (parseOp "&&") AssocLeft
                    ]
                  , [ Infix (parseOp "||") AssocLeft
+                   ]
+                 , [ Infix (parseOp "$")  AssocRight
                    ]
                  ]
 

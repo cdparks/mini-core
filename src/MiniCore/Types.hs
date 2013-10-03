@@ -92,7 +92,8 @@ bindeesOf = map snd
 
 -- Map binary ops to precedence
 precByOp :: [(Name, Int)]
-precByOp = [ ("||", 2) -- Boolean OR
+precByOp = [ ("$",  0) -- Low-precedence infix application
+           , ("||", 2) -- Boolean OR
            , ("&&", 3) -- Boolean AND
            , ("==", 4) -- Comparators
            , ("/=", 4)
@@ -104,6 +105,7 @@ precByOp = [ ("||", 2) -- Boolean OR
            , ("-",  6)
            , ("*",  7)
            , ("/",  7)
+           , (".",  9) -- Function composition
            ]
 
 {- Annotated Expression types -}
@@ -141,8 +143,8 @@ intTy = TCon "Int" []
 boolTy = TCon "Bool" []
 
 -- Constructor for function types
-arrow :: Type -> Type -> Type
-arrow a b = TCon "(->)" [a, b]
+fn :: Type -> Type -> Type
+fn a b = TCon "(->)" [a, b]
 
 -- Constructor for type variables
 var = TVar

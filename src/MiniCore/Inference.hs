@@ -20,24 +20,36 @@ import Control.Monad.Identity
 typecheck :: Program -> Stage ([(Name, Scheme)], Program)
 typecheck = runTI . inferTypes
 
+-- Type schemes for builtin functions
+ifScheme = Scheme ["a"] (boolTy `fn` (var "a" `fn` (var "a" `fn` var "a")))
+negScheme = Scheme [] (intTy `fn` intTy)
+appScheme = Scheme ["a", "b"] ((var "a" `fn` var "b") `fn` (var "a" `fn` var "b"))
+compScheme = Scheme ["a", "b", "c"] ((var "b" `fn` var "c") `fn` ((var "a" `fn` var "b") `fn` (var "a" `fn` var "c")))
+boolScheme = Scheme [] boolTy
+binNumScheme = Scheme [] (intTy `fn` (intTy `fn` intTy))
+binBoolScheme = Scheme [] (boolTy `fn` (boolTy `fn` boolTy))
+binCompareScheme = Scheme [] (intTy `fn` (intTy `fn` boolTy))
+
 {- Initial type-environment with primitive operations -}
 primOps = 
-    [ ("if",    Scheme ["a"] (boolTy `arrow` (var "a" `arrow` (var "a" `arrow` var "a"))))
-    , ("+",     Scheme []    (intTy  `arrow` (intTy  `arrow` intTy)))
-    , ("-",     Scheme []    (intTy  `arrow` (intTy  `arrow` intTy)))
-    , ("*",     Scheme []    (intTy  `arrow` (intTy  `arrow` intTy)))
-    , ("/",     Scheme []    (intTy  `arrow` (intTy  `arrow` intTy)))
-    , ("-",     Scheme []    (intTy  `arrow` (intTy  `arrow` intTy)))
-    , ("||",    Scheme []    (boolTy `arrow` (boolTy `arrow` boolTy)))
-    , ("&&",    Scheme []    (boolTy `arrow` (boolTy `arrow` boolTy)))
-    , ("==",    Scheme []    (intTy  `arrow` (intTy  `arrow` boolTy)))
-    , ("/=",    Scheme []    (intTy  `arrow` (intTy  `arrow` boolTy)))
-    , ("<",     Scheme []    (intTy  `arrow` (intTy  `arrow` boolTy)))
-    , (">",     Scheme []    (intTy  `arrow` (intTy  `arrow` boolTy)))
-    , ("<=",    Scheme []    (intTy  `arrow` (intTy  `arrow` boolTy)))
-    , (">=",    Scheme []    (intTy  `arrow` (intTy  `arrow` boolTy)))
-    , ("True",  Scheme []     boolTy)
-    , ("False", Scheme []     boolTy)
+    [ ("if",     ifScheme)
+    , ("$",      appScheme)
+    , (".",      compScheme)
+    , ("+",      binNumScheme)
+    , ("-",      binNumScheme)
+    , ("*",      binNumScheme)
+    , ("/",      binNumScheme)
+    , ("||",     binBoolScheme)
+    , ("&&",     binBoolScheme)
+    , ("==",     binCompareScheme)
+    , ("/=",     binCompareScheme)
+    , ("<",      binCompareScheme)
+    , (">",      binCompareScheme)
+    , ("<=",     binCompareScheme)
+    , (">=",     binCompareScheme)
+    , ("True",   boolScheme)
+    , ("False",  boolScheme)
+    , ("negate", negScheme)
     ]
 
 {- Internal types for type-checking -}
@@ -171,7 +183,7 @@ checkDataTypes = foldM checkDataType where
            s <- withNames vars
            let ty       = apply s $ TCon name $ map TVar vars
                vars'    = tvars ty
-               mkScheme = Scheme (Set.toList vars') . foldr arrow ty . apply s
+               mkScheme = Scheme (Set.toList vars') . foldr fn ty . apply s
            newDataType name ty
            checkConstructors mkScheme (Set.fromList vars) env constructors
 
@@ -234,7 +246,7 @@ tcExpr env (App e1 e2) =
        let t1' = apply s2 t1
            s   = s2 `scomp` s1
        n  <- fresh
-       s' <- unify s (t1', t2 `arrow` TVar n)
+       s' <- unify s (t1', t2 `fn` TVar n)
        return (s', apply s' (TVar n))
 
 -- Binary application
@@ -246,7 +258,7 @@ tcExpr env (Lambda args e) =
        (s, t) <- tcExpr (schemes `Map.union` env) e
        let schemes' = apply s schemes
            args' = fromSchemes schemes' args
-       return (s, foldr arrow t args')
+       return (s, foldr fn t args')
 
 -- Case
 tcExpr env (Case scrutinee alts) =
