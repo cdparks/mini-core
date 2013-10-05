@@ -238,9 +238,10 @@ casejump :: [(Int, GMCode)] -> Transition
 casejump alts =
     do (addr:_) <- gets gmStack
        (NConstructor tag _) <- gmLoad addr
+       cons <- gets gmCons
        branch <- case lookup tag alts of
                    Just branch -> return branch
-                   Nothing     -> throwError "Non-exhaustive patterns in case expression"
+                   Nothing     -> throwError $ "No case for constructor " ++ cons !! tag
        modify $ \s -> s { gmCode = branch ++ gmCode s }
 
 -- Simple branch using top-of-V-stack
