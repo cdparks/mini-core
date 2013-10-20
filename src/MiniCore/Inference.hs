@@ -263,7 +263,7 @@ tcExpr env (Lambda args e) =
 -- Case
 tcExpr env (Case scrutinee alts) =
     do (s, t) <- tcExpr env scrutinee
-       (s', t') <- tcAlts env t alts
+       (s', t') <- tcAlts env (apply s t) alts
        return (s' `scomp` s, t')
 
 -- Non-recursive Let
@@ -315,30 +315,31 @@ tcExpr env (Let True bindings expr) =
 tcAlts :: TypeEnv -> Type -> [Alt] -> TI (Subst, Type)
 tcAlts env scrut alts =
     do t <- fresh
-       foldM combine (idSubst, TVar t) alts
+       (s, (_, t')) <- foldM combine (idSubst, (scrut, TVar t)) alts
+       return (s, t')
   where
-    combine (s, t) alt =
-        do (s', t') <- tcAlt env scrut alt
-           s'' <- unify s' (t, t')
-           return (s'' `scomp` s, t')
+    combine (s, (scrut, t)) alt =
+        do (s', (scrut', t')) <- tcAlt env alt
+           s'' <- unify s' (scrut `fn` t, scrut' `fn` t')
+           return (s'', (scrut', t'))
 
--- Type-check a single alternative
-tcAlt :: TypeEnv -> Type -> Alt -> TI (Subst, Type)
-tcAlt env t (PCon name, names, body) =
+-- Type-check a single alternative. The first type in the return pair is of
+-- the scrutinee and the second is the type of the alternative.
+tcAlt :: TypeEnv -> Alt -> TI (Subst, (Type, Type))
+tcAlt env (PCon name, names, body) =
     do cons <- gets tiCons
        scheme <- case Map.lookup name cons of
            Just x  -> return x
            Nothing -> raise $ "Undeclared constructor " ++ quote name
        t' <- newInstance scheme
        let (types, rtype) = components t'
-       s <- unify idSubst (t, rtype)
        when (length types /= length names) $
            raise $ "Wrong number of components for " ++ quote name
        let schemes = map (Scheme []) types
            bindings = zip names schemes
            env'     = Map.fromList bindings `Map.union` env
-       (s', t') <- tcExpr env' body
-       return (s' `scomp` s, t')
+       (s, t) <- tcExpr env' body
+       return (s, (rtype, t))
   where
     -- Break a constructor into its components and return type
     components :: Type -> ([Type], Type)
