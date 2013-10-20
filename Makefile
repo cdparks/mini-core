@@ -8,6 +8,8 @@ test: mini-core
 	bin/mini-core examples/fold.core        | diff tests/fold.out -
 	bin/mini-core examples/freevar.core     | diff tests/freevar.out -
 	bin/mini-core examples/polymorphic.core | diff tests/polymorphic.out -
+	bin/mini-core examples/badcase.core     | diff tests/badcase.out -
+	bin/mini-core examples/badscrut.core    | diff tests/badscrut.out -
 
 mini-core: src/*.hs
 	cabal configure
@@ -24,7 +26,9 @@ update: mini-core
 	bin/mini-core examples/map.core         > tests/map.out
 	bin/mini-core examples/fold.core        > tests/fold.out
 	bin/mini-core examples/freevar.core     > tests/freevar.out
-	bin/mini-core examples/polymorphic.core > tests/polymorphic.out -
+	bin/mini-core examples/polymorphic.core > tests/polymorphic.out
+	bin/mini-core examples/badcase.core     > tests/badcase.out
+	bin/mini-core examples/badscrut.core    > tests/badscrut.out
 
 loud: mini-core
 	bin/mini-core examples/arithmetic.core
@@ -36,6 +40,8 @@ loud: mini-core
 	bin/mini-core examples/fold.core
 	bin/mini-core examples/freevar.core
 	bin/mini-core examples/polymorphic.core
+	bin/mini-core examples/badcase.core
+	bin/mini-core examples/badscrut.core
 
 pretty: mini-core
 	bin/mini-core --show-parse examples/arithmetic.core
@@ -58,6 +64,8 @@ typecheck: mini-core
 	bin/mini-core --show-types examples/fold.core
 	bin/mini-core --show-types examples/freevar.core
 	bin/mini-core --show-types examples/polymorphic.core
+	bin/mini-core --show-types examples/badcase.core
+	bin/mini-core --show-types examples/badscrut.core
 
 transform: mini-core
 	bin/mini-core --show-simple examples/arithmetic.core

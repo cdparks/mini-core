@@ -1,0 +1,7 @@
+Type Error:
+	Cannot unify 'A' and 'X'
+in:
+	f m = case m of {
+        B -> 1;
+        Y -> 2;
+      }

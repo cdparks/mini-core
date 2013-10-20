@@ -1,0 +1,10 @@
+data A = B | C;
+data X = Y | Z;
+
+f m = case m of {
+    B -> 1;
+    Y -> 2;
+};
+
+main = f C;
+

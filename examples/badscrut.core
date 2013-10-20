@@ -1,0 +1,9 @@
+data List a = Cons a (List a) | Nil;
+
+f m = case m of {
+    Cons x xs -> 1;
+    Nil       -> 2;
+};
+
+main = f True;
+
