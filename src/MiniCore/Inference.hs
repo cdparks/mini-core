@@ -263,8 +263,9 @@ tcExpr env (Lambda args e) =
 -- Case
 tcExpr env (Case scrutinee alts) =
     do (s, t) <- tcExpr env scrutinee
-       (s', t') <- tcAlts env (apply s t) alts
-       return (s' `scomp` s, t')
+       (s', (scrut', t')) <- tcAlts env (apply s t) alts
+       s'' <- unify s' (t, apply s' scrut')
+       return (s'' `scomp` s' `scomp` s, t')
 
 -- Non-recursive Let
 tcExpr env (Let False bindings expr) =
@@ -312,16 +313,15 @@ tcExpr env (Let True bindings expr) =
        return (s'' `scomp` s', t)
 
 -- Type-check each alternative in a case-expression
-tcAlts :: TypeEnv -> Type -> [Alt] -> TI (Subst, Type)
+tcAlts :: TypeEnv -> Type -> [Alt] -> TI (Subst, (Type, Type))
 tcAlts env scrut alts =
     do t <- fresh
-       (s, (_, t')) <- foldM combine (idSubst, (scrut, TVar t)) alts
-       return (s, t')
+       foldM combine (idSubst, (scrut, TVar t)) alts
   where
     combine (s, (scrut, t)) alt =
         do (s', (scrut', t')) <- tcAlt env alt
            s'' <- unify s' (scrut `fn` t, scrut' `fn` t')
-           return (s'', (scrut', t'))
+           return (s'' `scomp` s', (scrut', t'))
 
 -- Type-check a single alternative. The first type in the return pair is of
 -- the scrutinee and the second is the type of the alternative.
