@@ -320,8 +320,8 @@ tcAlts env scrut alts =
   where
     combine (s, (scrut, t)) alt =
         do (s', (scrut', t')) <- tcAlt env alt
-           s'' <- unify s' (scrut `fn` t, scrut' `fn` t')
-           return (s'' `scomp` s', (scrut', t'))
+           s'' <- unifyAll s' [(scrut, scrut'), (t, t')]
+           return (s'' `scomp` s' `scomp` s, (scrut', t'))
 
 -- Type-check a single alternative. The first type in the return pair is of
 -- the scrutinee and the second is the type of the alternative.
@@ -331,15 +331,15 @@ tcAlt env (PCon name, names, body) =
        scheme <- case Map.lookup name cons of
            Just x  -> return x
            Nothing -> raise $ "Undeclared constructor " ++ quote name
-       t' <- newInstance scheme
-       let (types, rtype) = components t'
+       t <- newInstance scheme
+       let (types, rtype) = components t
        when (length types /= length names) $
            raise $ "Wrong number of components for " ++ quote name
        let schemes = map (Scheme []) types
            bindings = zip names schemes
            env'     = Map.fromList bindings `Map.union` env
-       (s, t) <- tcExpr env' body
-       return (s, (rtype, t))
+       (s, t') <- tcExpr env' body
+       return (s, (rtype, apply s t'))
   where
     -- Break a constructor into its components and return type
     components :: Type -> ([Type], Type)
