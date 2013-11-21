@@ -17,14 +17,16 @@ mini-core compiles a file to G-code and executes it in a virtual G-Machine.
 A program is just a sequence of supercombinators. Execution proceeds by reducing the supercombinator `main`. Simple algebraic data types are supported using tagged constructors.
 
 ```haskell
--- A List data specification; specifies the shape of our constructors
-data List a = Cons a (List a) | Nil;
+-- A list is either empty or a pair containing a value and another list
+data List a = Nil | Cons a (List a);
 
 -- mini-core is non-strict; we can construct infinite data structures
 infinite x = Cons x (infinite (x + 1));
 
 -- Case expressions make a multi-way branch based on the scrutinee's
 -- tag and bind its components to the names preceding the arrow
+
+-- take yields the first n elements of a (possibly infinite) list
 take n ls = if (n <= 0)
                 Nil
                 (case ls of {
@@ -32,14 +34,16 @@ take n ls = if (n <= 0)
                     Nil       -> Nil;
                 });
 
+-- map applys a function f to each element in a list yielding a list of the
+-- same size
 map f ls = case ls of {
     Cons x xs -> Cons (f x) (map f xs);
     Nil       -> Nil;
 };
 
--- Print the squares of the first 5 elements of an infinite list
--- Like Haskell, we use \ to introduce an anonymous function
-main = map (\x -> x * x) (take 5 (infinite 0))
+-- Print the squares of the first 5 natural numbers
+-- As in Haskell, we use \ to introduce an anonymous function
+main = map (\x -> x * x) (take 5 (infinite 1))
 ```
 
 Running the compiler on this program produces the following output:
