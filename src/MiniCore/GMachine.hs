@@ -11,6 +11,7 @@ import Data.List
 import Data.Maybe
 import Control.Monad.State
 import Control.Monad.Error
+import System.IO
 
 -- Evaluation monad transformer
 type Eval a = StateT GMState Stage a
@@ -23,19 +24,32 @@ type Inspect = Eval GMState
 
 -- Public interface to GMachine takes an initial state and yield
 -- a final state
-execute :: Bool -> GMState -> Stage GMState
-execute loud state = execStateT (evaluate loud) state
+execute :: Bool -> Bool -> GMState -> Stage GMState
+execute loud interactive state = execStateT (evaluate loud interactive) state
+
+-- Ask if user wants to continue in interactive mode
+untilNext :: Eval ()
+untilNext =
+    do liftIO $ putStr "Next/Quit? [enter/q]: "
+       liftIO $ hFlush stdout
+       line <- liftIO getLine
+       case line of
+           "q"   -> throwError "Halting..."
+           ""    -> return ()
+           _     -> untilNext
 
 -- Move from state to state until final state is reached
-evaluate :: Bool -> Inspect
-evaluate loud =
+evaluate :: Bool -> Bool -> Inspect
+evaluate loud interactive =
     do state <- get
-       when loud $
+       when (loud || interactive) $
            lift $ trace $ formatState state
+       when interactive $
+           untilNext
        if isFinal state then
            return state
        else
-           step >> doAdmin >> evaluate loud
+           step >> doAdmin >> evaluate loud interactive
 
 -- Update machine statistics. Collect garbage if heap has grown
 -- too large

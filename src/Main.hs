@@ -31,7 +31,7 @@ run flags program =
        state <- compile (cons, transformed)
        traceStage "Compilation" (traceComp flags) $ formatDefs state
 
-       state' <- execute (traceExec flags) state
+       state' <- execute (traceExec flags) (traceNext flags) state
        return $ formatStateOutput state'
 
 -- Which stages should print debug information?
@@ -41,6 +41,7 @@ data Flags = Flags
     , traceTrans :: Bool
     , traceComp  :: Bool
     , traceExec  :: Bool
+    , traceNext  :: Bool
     } deriving Show
 
 -- By default, just run the program
@@ -51,6 +52,7 @@ defaultFlags = Flags
     , traceTrans = False
     , traceComp  = False
     , traceExec  = False
+    , traceNext  = False
     }
 
 -- Context is file to execute and execution flag
@@ -78,7 +80,10 @@ options = [ Option ['h'] ["help"]
                 "Show G-code after compilation"
           , Option [] ["show-states"]
                 (NoArg (\f -> return f { traceExec = True }))
-                "Print each machine state as program executes"
+                "Dump all machine states"
+          , Option [] ["interactive"]
+                (NoArg (\f -> return f { traceNext = True }))
+                "Print each machine state one at a time as program executes"
           ]
 
 -- Parse options and generate execution context
