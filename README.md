@@ -11,7 +11,8 @@ mini-core compiles a file to G-code and executes it in a virtual G-Machine.
           --show-types   Show types after type-checking
           --show-simple  Show program after constructor generation and lambda lifting
           --show-g-code  Show G-code after compilation
-          --show-states  Print each machine state as program executes
+          --show-states  Dump all machine states
+          --interactive  Print each machine state one at a time as program executes
 
 ## Example Program
 A program is just a sequence of supercombinators. Execution proceeds by reducing the supercombinator `main`. Simple algebraic data types are supported using tagged constructors.
