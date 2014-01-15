@@ -1,0 +1,9 @@
+data Pair a b = Pair a b;
+
+id x = x;
+
+f g p = case p of { Pair a b -> Pair (g a) (g b); };
+
+-- Should not type check
+main = f id (Pair 1 True)
+
