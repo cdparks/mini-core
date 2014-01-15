@@ -2,7 +2,7 @@
 
 module MiniCore.Inference (
     typecheck,
-) where 
+) where
 
 import MiniCore.Types
 import MiniCore.Format
@@ -31,7 +31,7 @@ binBoolScheme = Scheme [] (boolTy `fn` (boolTy `fn` boolTy))
 binCompareScheme = Scheme [] (intTy `fn` (intTy `fn` boolTy))
 
 {- Initial type-environment with primitive operations -}
-primOps = 
+primOps =
     [ ("if",     ifScheme)
     , ("$",      appScheme)
     , (".",      compScheme)
@@ -68,7 +68,7 @@ data TIState = TIState
 --type TI a = ErrorT String (StateT TIState IO) a
 type TI a = StateT TIState Stage a
 
-{- Manipulating TI context -} 
+{- Manipulating TI context -}
 
 -- Set declaration as current typechecking context
 setContext :: Declaration -> TI ()
@@ -242,7 +242,7 @@ tcExpr env (Var x) =
 -- Application 
 tcExpr env (App e1 e2) =
     do (s1, t1) <- tcExpr env e1
-       (s2, t2) <- tcExpr env e2
+       (s2, t2) <- tcExpr (apply s1 env) e2
        let t1' = apply s2 t1
            s   = s2 `scomp` s1
        n  <- fresh
@@ -380,7 +380,7 @@ newInstance (Scheme vs t) =
 -- Build a polymorphic version of a monomorphic type
 generalize :: TypeEnv -> Type -> TI Scheme
 generalize env t =
-    do let vs = tvars t `Set.difference` tvars env 
+    do let vs = tvars t `Set.difference` tvars env
        s <- withNames (Set.toList vs)
        let t'  = apply s t
            vs' = map unTVar (Map.elems s)
