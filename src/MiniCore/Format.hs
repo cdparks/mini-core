@@ -22,8 +22,8 @@ applyPrec = 10
 lowestPrec = 0
 
 -- Join a list of strings together
-join :: [String] -> Doc
-join = sep . map text
+combine :: [String] -> Doc
+combine = sep . map text
 
 {- Pretty-print program source -}
 
@@ -42,10 +42,10 @@ instance Format Program where
 -- Pretty-print a declaration (data or combinator)
 instance Format Declaration where
     format (Combinator name args expr) =
-        text name <+> join args <+> text "=" <+> format expr
+        text name <+> combine args <+> text "=" <+> format expr
     format (Data name vars constructors) =
         text "data" <+> text name <+>
-        join vars <+> text "=" <+>
+        combine vars <+> text "=" <+>
         sep (punctuate (text " |") $ map format constructors)
 
 -- Pretty-print a constructor
@@ -157,7 +157,7 @@ instance Format Expr where
     -- Lambda expression
     formatPrec prec (Lambda args body) =
         parensIf (prec > lowestPrec) $
-            text "\\" <> join args <+>
+            text "\\" <> combine args <+>
             text "->" <+> formatPrec lowestPrec body
 
 -- Format name = expression pairs
@@ -170,7 +170,7 @@ instance Format [(Name, Expr)] where
 instance Format [Alt] where
     formatPrec prec alts =
         vcat (punctuate semi (map formatAlt alts)) <> semi where
-            formatAlt (pattern, args, expr) = format pattern <+> join args <+>
+            formatAlt (pattern, args, expr) = format pattern <+> combine args <+>
                 text "->" <+> formatPrec prec expr
 
 -- Format constructor, wildcard, or internal tagged pattern
