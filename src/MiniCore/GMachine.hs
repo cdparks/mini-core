@@ -48,8 +48,8 @@ evaluate loud interactive = do
     when interactive $
         untilNext
     if isFinal state
-    then return state
-    else step >> doAdmin >> evaluate loud interactive
+        then return state
+        else step >> doAdmin >> evaluate loud interactive
 
 -- Update machine statistics. Collect garbage if heap has grown
 -- too large
@@ -302,12 +302,12 @@ print' = do
     doPrint (NConstructor tag args) = do
         cons <- gets gmCons
         if length args > 0
-        then modify $ \s -> s
-                { gmOutput = (cons !! tag):"(":gmOutput s
-                , gmCode = printN (length args) ++ [RParen] ++ gmCode s
-                , gmStack = args ++ gmStack s
-                }
-        else modify $ \s -> s { gmOutput = (cons !! tag):gmOutput s }
+            then modify $ \s -> s
+                    { gmOutput = (cons !! tag):"(":gmOutput s
+                    , gmCode = printN (length args) ++ [RParen] ++ gmCode s
+                    , gmStack = args ++ gmStack s
+                    }
+            else modify $ \s -> s { gmOutput = (cons !! tag):gmOutput s }
 
     doPrint (NGlobal _ _) =
         modify $ \s -> s { gmOutput = "<function>":gmOutput s }
@@ -453,13 +453,13 @@ unwind = do
     newState (NGlobal n code) = do
         (addr:stack) <- gets gmStack
         if length stack < n
-        then restoreDump $ last $ addr:stack
-        else do
-            stack <- rearrange n
-            modify $ \s -> s
-                { gmCode  = code
-                , gmStack = stack
-                }
+            then restoreDump $ last $ addr:stack
+            else do
+                stack <- rearrange n
+                modify $ \s -> s
+                    { gmCode  = code
+                    , gmStack = stack
+                    }
 
 -- Pull n arguments directly onto the stack out of NApp nodes
 rearrange :: Int -> Eval GMStack

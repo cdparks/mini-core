@@ -20,4 +20,4 @@ executable mini-core
   build-depends:       base >4.5, pretty >1.0, mtl >2.0, parsec >3.0, containers >0.4
   hs-source-dirs:      src
   Main-is:             Main.hs
-  Extensions:          DoAndIfThenElse
+
