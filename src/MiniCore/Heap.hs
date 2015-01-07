@@ -28,10 +28,11 @@ hInit = Heap
 hAlloc :: Heap a -> a -> (Heap a, Addr)
 hAlloc heap x = (heap', addr) where
     addr:free = hFreeList heap
-    heap' = heap { hSize        = hSize heap + 1
-                 , hFreeList    = free
-                 , hEnvironment = (addr, x):hEnvironment heap
-                 }
+    heap' = heap
+        { hSize        = hSize heap + 1
+        , hFreeList    = free
+        , hEnvironment = (addr, x):hEnvironment heap
+        }
 
 -- Replace current node at address with new object
 hUpdate :: Heap a -> Addr -> a -> Heap a
@@ -39,10 +40,11 @@ hUpdate heap addr x = heap { hEnvironment = (addr, x):remove (hEnvironment heap)
 
 -- Remove object from live environment, and return address to free-list
 hFree :: Heap a -> Addr -> Heap a
-hFree heap addr = heap { hSize        = hSize heap - 1
-                       , hFreeList    = addr:hFreeList heap
-                       , hEnvironment = remove (hEnvironment heap) addr
-                       }
+hFree heap addr = heap
+    { hSize        = hSize heap - 1
+    , hFreeList    = addr:hFreeList heap
+    , hEnvironment = remove (hEnvironment heap) addr
+    }
 
 -- Dereference address and return object
 hLoad :: Heap a -> Addr -> a

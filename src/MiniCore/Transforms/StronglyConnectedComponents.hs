@@ -5,13 +5,16 @@ module MiniCore.Transforms.StronglyConnectedComponents (
 
 import MiniCore.Types
 import MiniCore.Transforms.Utils
+import MiniCore.Format
 
 import Control.Monad.State
+import Control.Applicative
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.List as List
 import Data.Maybe
 import Debug.Trace
+import Data.Foldable (foldrM)
 
 -- Map vertex to the list of neighbor vertices
 type Edges a = Map.Map a [a]
@@ -38,7 +41,7 @@ innerDFS edges = List.foldl' search
 
 -- Public interface to depth-first-search
 dfs :: Ord a => Edges a -> [a] -> [a]
-dfs edges = snd . innerDFS edges (Set.empty, []) 
+dfs edges = snd . innerDFS edges (Set.empty, [])
 
 -- Do depth first search from each vertex producing a list of sets
 -- of vertices visited.
@@ -73,8 +76,7 @@ depends :: FVProgram -> Stage Program
 depends program = mapM depends' program
   where
     depends' (name, args, body) =
-        do body' <- dependsExpr body
-           return $ Combinator name args body'
+        Combinator name args <$> dependsExpr body
 
 -- Lets are the only interesting case
 dependsExpr :: FVExpr -> Stage Expr
@@ -88,68 +90,57 @@ dependsExpr (free, AVar v) =
     return $ Var v
 
 dependsExpr (free, AApp e1 e2) =
-    do e1' <- dependsExpr e1
-       e2' <- dependsExpr e2
-       return $ App e1' e2'
+    App <$> dependsExpr e1 <*> dependsExpr e2
 
 dependsExpr (free, ACase body alts) =
-    do let dependsAlt (tag, args, e) =
-             do e' <- dependsExpr e
-                return (tag, args, e')
-       alts' <- mapM dependsAlt alts
-       body' <- dependsExpr body
-       return $ Case body' alts'
+    let dependsAlt (tag, args, e) =
+            (,,) tag args <$> dependsExpr e
+    in Case <$> dependsExpr body <*> mapM dependsAlt alts
 
 dependsExpr (free, ALambda args body) =
-    do body' <- dependsExpr body
-       return $ Lambda args body'
+    Lambda args <$> dependsExpr body
 
-dependsExpr (free, ALet recursive defs body) =
-    do let binders = bindersOf defs
-           binderSet
-              | recursive = Set.fromList binders
-              | otherwise = Set.empty
+dependsExpr (free, ALet recursive defs body) = do
+    let binders = bindersOf defs
+        binderSet
+           | recursive = Set.fromList binders
+           | otherwise = Set.empty
 
-           -- Make an edge from each name to its free variables that are bound
-           -- in this letrec
-           edges = [ (name, freeSet)
-                   | (name, (freeVars, _)) <- defs
-                   , freeSet <- Set.toList (freeVars `Set.intersection` binderSet)
-                   ]
+        -- Make an edge from each name to its free variables that are bound
+        -- in this letrec
+        edges = [ (name, freeSet)
+                | (name, (freeVars, _)) <- defs
+                , freeSet <- Set.toList (freeVars `Set.intersection` binderSet)
+                ]
 
-           -- If ins w = [u, ...] then w depends on each u
-           -- If out u = [w, ...] then each w depends on u
-           ins = Map.fromList [(w, [u | (u, w') <- edges, w == w']) | (_, w) <- edges]
-           out = Map.fromList [(u, [w | (u', w) <- edges, u == u']) | (u, _) <- edges]
+        -- If ins w = [u, ...] then w depends on each u
+        -- If out u = [w, ...] then each w depends on u
+        ins = Map.fromList [(w, [u | (u, w') <- edges, w == w']) | (_, w) <- edges]
+        out = Map.fromList [(u, [w | (u', w) <- edges, u == u']) | (u, _) <- edges]
 
-           -- Strongly connected components in sorted topologically
-           components = map Set.toList (scc ins out binders)
+        -- Strongly connected components in sorted topologically
+        components = map Set.toList (scc ins out binders)
 
-           -- Break defs into strongly connected components
-           defs' = [[(name, fromJust $ lookup name defs) | name <- names]
-                   | names <- components
-                   ]
+        -- Break defs into strongly connected components
+        defs' = [[(name, fromJust $ lookup name defs) | name <- names]
+                | names <- components
+                ]
 
-       -- Build new nested let(rec)
-       body' <- dependsExpr body
-       foldrM mkLet body' defs'
+    -- Build new nested let(rec)
+    body' <- dependsExpr body
+    defs'' <- foldrM mkLet body' defs'
+    return defs''
 
 -- Take a list of definitions and build a new Let out of them
 -- Make it recursive if any name is found in the set of all
 -- free variables
 mkLet :: [(Name, FVExpr)] -> Expr -> Stage Expr
-mkLet defs body =
-    do let names = map fst defs
-           exprs = map snd defs
-       exprs' <- mapM dependsExpr exprs
-       let defs' = zip names exprs'
-           vars = foldr Set.union Set.empty $ map fst exprs
-           recursive = any (`Set.member` vars) names
-       return $ Let recursive defs' body
-
--- Right monadic fold
-foldrM :: Monad m => (a -> b -> m b) -> b -> [a] -> m b
-foldrM f b []     = return b
-foldrM f b (a:as) = do b' <- foldrM f b as
-                       f a b'
+mkLet defs body = do
+    let names = map fst defs
+        exprs = map snd defs
+    exprs' <- mapM dependsExpr exprs
+    let defs' = zip names exprs'
+        vars = foldr Set.union Set.empty $ map fst exprs
+        recursive = any (`Set.member` vars) names
+    return $ Let recursive defs' body
 

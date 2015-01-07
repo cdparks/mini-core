@@ -160,7 +160,8 @@ extraDefs = [
 
 -- Generate initial state from AST
 compile :: Program -> TIState
-compile program = (output, stack, dump, heap, globals, steps) where
+compile program = (output, stack, dump, heap, globals, steps)
+  where
     defs = program ++ prelude ++ extraDefs
     (heap, globals) = buildInitialHeap defs
     output = []
@@ -205,18 +206,21 @@ primitives = [
 
 -- Build initial heap from list of supercombinators
 buildInitialHeap :: [Combinator] -> (Heap Node, Globals)
-buildInitialHeap combinators = (heap'', caddrs ++ paddrs) where
+buildInitialHeap combinators = (heap'', caddrs ++ paddrs)
+  where
     (heap',  caddrs) = mapAccumL allocCombinator hInit combinators
     (heap'', paddrs)  = mapAccumL allocPrimitive heap' primitives
 
 -- Allocate a single combinator
 allocCombinator :: Heap Node -> Combinator -> (Heap Node, (Name, Addr))
-allocCombinator heap (name, args, body) = (heap', (name, addr)) where
+allocCombinator heap (name, args, body) = (heap', (name, addr))
+  where
     (heap', addr) = hAlloc heap (NCombinator name args body)
 
 -- Allocate a single primitive
 allocPrimitive :: Heap Node -> (Name, Primitive) -> (Heap Node, (Name, Addr))
-allocPrimitive heap (name, primitive) = (heap', (name, addr)) where
+allocPrimitive heap (name, primitive) = (heap', (name, addr))
+  where
     (heap', addr) = hAlloc heap (NPrim name primitive)
 
 -- Increment number of steps in reduction
@@ -227,14 +231,16 @@ incSteps (output, stack, dump, heap, globals, steps) =
 -- Transition from one state to the next keeping track of all
 -- previous states
 eval :: TIState -> [TIState]
-eval state = state:rest where
+eval state = state:rest
+  where
     next                 = step (incSteps state)
     rest | isFinal state = []
          | otherwise     = eval next
 
 -- Should reduction halt?
 isFinal :: TIState -> Bool
-isFinal (_, [addr], [], heap, _, _) = isData value || isNum value where
+isFinal (_, [addr], [], heap, _, _) = isData value || isNum value
+  where
     value = hLoad heap addr
 isFinal (_, [], _, _, _, _)         = True
 isFinal _                           = False
@@ -275,7 +281,8 @@ isNil (NData 4 [_, _])  = True
 isNil _                 = False
 
 -- Apply a function to the components of a pair
-pairApply heap (NData 5 [x, y]) f = (heap'', app) where
+pairApply heap (NData 5 [x, y]) f = (heap'', app)
+  where
     (heap',  addr)  = hAlloc heap  (NApp f x)
     (heap'', addr') = hAlloc heap' (NApp addr y)
     app = hLoad heap'' addr'
@@ -283,7 +290,8 @@ pairApply _ _ _                   = error "Function expects a pair"
 
 -- If list is nil, return (heap, nil-value). Otherwise, return
 -- (heap', f head tail).
-listApply heap (NData 3 [x, xs]) _ f = (heap'', app) where
+listApply heap (NData 3 [x, xs]) _ f = (heap'', app)
+  where
     (heap',  addr)  = hAlloc heap  (NApp f x)
     (heap'', addr') = hAlloc heap' (NApp addr xs)
     app = hLoad heap'' addr'
@@ -292,7 +300,8 @@ listApply _ _ _ _                    = error "Function expects a list"
 
 -- Perform a single reduction from one state to the next
 step :: TIState -> TIState
-step state = dispatch (hLoad heap top) where
+step state = dispatch (hLoad heap top)
+  where
     (output, stack@(top:rest), dump, heap, globals, steps) = state
 
     -- If number is on top, we must have deferred some
@@ -317,7 +326,8 @@ step state = dispatch (hLoad heap top) where
     dispatch (NPointer a) = (output, a:rest, dump, heap, globals, steps)
 
     -- Apply combinator
-    dispatch (NCombinator name args body) = (output, stack', dump, heap', globals, steps) where
+    dispatch (NCombinator name args body) = (output, stack', dump, heap', globals, steps)
+      where
         -- Bind arguments
         env = bindings ++ globals
         bindings = zip args (getArgs heap stack)
@@ -385,7 +395,8 @@ fromRelational _ _ _ = error "Expected numeric argument(s)"
 -- Either apply unary primitive or set up evaluation of
 -- argument to unary primitive
 primUnary :: (Node -> Node) -> TIState -> TIState
-primUnary f (output, (_:root:stack), dump, heap, globals, steps) = state' where
+primUnary f (output, (_:root:stack), dump, heap, globals, steps) = state'
+  where
     addr = getArg heap root
     arg = hLoad heap addr
     state' | isNum arg  = (output, root:stack, dump, hUpdate heap root (f arg), globals, steps)
@@ -396,68 +407,80 @@ primUnary _ _ = error "Malformed unary primitive expression"
 -- Either apply binary primitive or set up evaluation of
 -- arguments to binary primitive
 primBinary :: (Node -> Node -> Node) -> TIState -> TIState
-primBinary f (output, (_:xRoot:yRoot:stack), dump, heap, globals, steps) = state' where
+primBinary f (output, (_:xRoot:yRoot:stack), dump, heap, globals, steps) = state'
+  where
     (xAddr, yAddr) = (getArg heap xRoot, getArg heap yRoot)
     (x, y) = (hLoad heap xAddr, hLoad heap yAddr)
-    state' | isNum x && isNum y        = (output, yRoot:stack, dump, hUpdate heap yRoot (f x y), globals, steps)
-           | isNum y && not (isData x) = (output, xAddr:yRoot:stack, [xRoot]:dump, heap, globals, steps)
-           | isData y || isData x      = error "Expected numeric arguments to binary operator"
-           | otherwise                 = (output, yAddr:stack,       [yRoot]:dump, heap, globals, steps)
+    state'
+        | isNum x && isNum y        = (output, yRoot:stack, dump, hUpdate heap yRoot (f x y), globals, steps)
+        | isNum y && not (isData x) = (output, xAddr:yRoot:stack, [xRoot]:dump, heap, globals, steps)
+        | isData y || isData x      = error "Expected numeric arguments to binary operator"
+        | otherwise                 = (output, yAddr:stack,       [yRoot]:dump, heap, globals, steps)
 primBinary _ _ = error "Malformed binary primitive expression"
 
 -- If condition is evaluated, use it to choose the correct branch.
 -- Otherwise, put application on dump and evaluate condition.
-primIf (output, (_:c:x:y:stack), dump, heap, globals, steps) = state' where
+primIf (output, (_:c:x:y:stack), dump, heap, globals, steps) = state'
+  where
     (cAddr, xAddr, yAddr) = (getArg heap c, getArg heap x, getArg heap y)
     cond = hLoad heap cAddr
-    state' | isTrue cond  = (output, y:stack, dump, hUpdate heap y (NPointer xAddr), globals, steps)
-           | isFalse cond = (output, y:stack, dump, hUpdate heap y (NPointer yAddr), globals, steps)
-           | isData cond  = error "Expected a Boolean condition for if"
-           | otherwise    = (output, cAddr:x:y:stack, [c]:dump, heap, globals, steps)
+    state'
+        | isTrue cond  = (output, y:stack, dump, hUpdate heap y (NPointer xAddr), globals, steps)
+        | isFalse cond = (output, y:stack, dump, hUpdate heap y (NPointer yAddr), globals, steps)
+        | isData cond  = error "Expected a Boolean condition for if"
+        | otherwise    = (output, cAddr:x:y:stack, [c]:dump, heap, globals, steps)
 primIf _ = error "Malformed if-expression"
 
 -- If pair is evaluated, apply function to it. Otherwise, put application on
 -- dump and evaluate pair.
-primCasePair (output, (_:p:f:stack), dump, heap, globals, steps) = state' where
+primCasePair (output, (_:p:f:stack), dump, heap, globals, steps) = state'
+  where
     (pAddr, fAddr) = (getArg heap p, getArg heap f)
     pair = hLoad heap pAddr
     (heap', app) = pairApply heap pair fAddr
-    state' | isPair pair = (output, f:stack, dump, hUpdate heap' f app, globals, steps)
-           | isData pair = error "Expected a pair as argument to casePair"
-           | otherwise   = (output, pAddr:f:stack, [p]:dump, heap, globals, steps)
+    state'
+        | isPair pair = (output, f:stack, dump, hUpdate heap' f app, globals, steps)
+        | isData pair = error "Expected a pair as argument to casePair"
+        | otherwise   = (output, pAddr:f:stack, [p]:dump, heap, globals, steps)
 primCasePair _ = error "Malformed casePair-expression"
 
 -- If list is evaluated, check if nil and apply appropriate function to it.
 -- Otherwise, put application on dump and evaluate list.
-primCaseList (output, (_:l:n:c:stack), dump, heap, globals, steps) = state' where
+primCaseList (output, (_:l:n:c:stack), dump, heap, globals, steps) = state'
+  where
     (lAddr, nAddr, cAddr) = (getArg heap l, getArg heap n, getArg heap c)
     list = hLoad heap lAddr
     (heap', app) = listApply heap list nAddr cAddr
-    state' | isList list = (output, c:stack, dump, hUpdate heap' c app, globals, steps)
-           | isData list = error "Expected a list as argument to caseList"
-           | otherwise   = (output, lAddr:n:c:stack, [l]:dump, heap, globals, steps)
+    state'
+        | isList list = (output, c:stack, dump, hUpdate heap' c app, globals, steps)
+        | isData list = error "Expected a list as argument to caseList"
+        | otherwise   = (output, lAddr:n:c:stack, [l]:dump, heap, globals, steps)
 primCaseList _ = error "Malformed caseList-expression"
 
 -- If argument is evaluated, put it on the output stack.
 -- Otherwise, put application on dump and evaluate argument.
-primPrint (output, (_:v:n:stack), dump, heap, globals, steps) = state' where
+primPrint (output, (_:v:n:stack), dump, heap, globals, steps) = state'
+  where
     (vAddr, nAddr) = (getArg heap v, getArg heap n)
     value = hLoad heap vAddr
-    state' | isNum value  = (value:output, nAddr:stack, dump, heap, globals, steps)
-           | isData value = error "Expected a numeric argument to print"
-           | otherwise    = (output, vAddr:n:stack, [v]:dump, heap, globals, steps)
+    state'
+        | isNum value  = (value:output, nAddr:stack, dump, heap, globals, steps)
+        | isData value = error "Expected a numeric argument to print"
+        | otherwise    = (output, vAddr:n:stack, [v]:dump, heap, globals, steps)
 primPrint _ = error "Malformed print-expression"
 
 -- Generate a new data node
 primConstruct :: Int -> Int -> TIState -> TIState
-primConstruct tag arity state = (output, stack', dump, heap', globals, steps) where
+primConstruct tag arity state = (output, stack', dump, heap', globals, steps)
+  where
     (output, stack, dump, heap, globals, steps) = state
     expect = arity + 1
     root = stack !! (expect - 1)
     args = take arity $ getArgs heap stack
     heap' = hUpdate heap root (NData tag args)
-    stack' | expect > length stack = error ("Not enough arguments for constructor")
-           | otherwise             = root:drop expect stack
+    stack'
+        | expect > length stack = error ("Not enough arguments for constructor")
+        | otherwise             = root:drop expect stack
 
 -- Load arguments from heap
 getArgs :: Heap Node -> Stack -> [Addr]
@@ -472,7 +495,8 @@ getArg heap addr = case hLoad heap addr of
 -- Create heap node from expression and update redex root address 
 -- to point to result
 instantiateAndUpdate :: Heap Node -> [(Name, Addr)] -> Expr -> Addr -> Heap Node
-instantiateAndUpdate heap env expr addr = build expr where
+instantiateAndUpdate heap env expr addr = build expr
+  where
     -- Build number on heap
     build (Num n) = hUpdate heap addr (NNum n)
 
@@ -505,7 +529,8 @@ instantiateAndUpdate heap env expr addr = build expr where
 
 -- Create heap node from expression
 instantiate :: Heap Node -> [(Name, Addr)] -> Expr -> (Heap Node, Addr)
-instantiate heap env expr = build expr where
+instantiate heap env expr = build expr
+  where
     -- Build number on heap
     build (Num n) = hAlloc heap (NNum n)
 
@@ -537,14 +562,16 @@ instantiate heap env expr = build expr where
 
 -- Add let bindings to new heap and environment
 addBindings :: [(Name, Expr)] -> Heap Node -> [(Name, Addr)] -> (Heap Node, [(Name, Addr)])
-addBindings bindings heap env = foldr addBinding (heap, []) bindings where
+addBindings bindings heap env = foldr addBinding (heap, []) bindings
+  where
     addBinding (name, expr) (heap', env') =
         let (heap'', addr) = instantiate heap' env expr
         in (heap'', (name, addr):env')
 
 -- Parse, compile, reduce program, and print states
 debug :: String -> String
-debug = show . format . eval . compile . parseCore where
+debug = show . format . eval . compile . parseCore
+  where
     format states = formatStates states $$ formatOutput states
 
 -- Parse, compile, reduce program, and print output
@@ -553,7 +580,8 @@ run = show . formatOutput . eval . compile . parseCore
 
 -- Format elements of output stack
 formatOutput :: [TIState] -> Doc
-formatOutput states = vcat $ map formatInteger $ reverse output where
+formatOutput states = vcat $ map formatInteger $ reverse output
+  where
     (output, _, _, _, _, _) = last states
     formatInteger (NNum n)  = int n
     formatInteger node      = error $ "Attempted to print " ++ (show $ formatNode node)
@@ -564,11 +592,14 @@ formatStates = vcat . map formatState . zip [1..]
 
 -- Format a single computation state 
 formatState :: (Int, TIState) -> Doc
-formatState (num, (output, stack, _, heap, _, _)) = text "State" <+> int num <> colon $$ (nest 4 $ formatStack heap stack $$ formatHeap heap stack)
+formatState (num, (output, stack, _, heap, _, _)) =
+    text "State" <+> int num <> colon $$
+        (nest 4 $ formatStack heap stack $$ formatHeap heap stack)
 
 -- Format the stack as a tree of applications
 formatStack :: Heap Node -> Stack -> Doc
-formatStack heap (x:xs) = text "Stack" <> colon $$ nest 4 (foldr draw (formatHeapNode heap x) (reverse xs)) where
+formatStack heap (x:xs) = text "Stack" <> colon $$ nest 4 (foldr draw (formatHeapNode heap x) (reverse xs))
+  where
     draw addr doc = text "@" <> nest 1 (text "---" <+> formatValue addr $$ text "\\" $$ nest 1 doc)
     formatTop addr = formatAddr addr <+> formatNode (hLoad heap addr)
     formatValue addr = case hLoad heap addr of
@@ -581,7 +612,8 @@ formatHeap :: Heap Node -> Stack -> Doc
 formatHeap (size, _, env) _ = text "Heap" <> colon $$ nest 4 (formatUsage size (calculateUsage env))
 
 calculateUsage :: [(Addr, Node)] -> Usage
-calculateUsage env = foldr count (Usage 0 0 0 0 0 0) (map snd env) where
+calculateUsage env = foldr count (Usage 0 0 0 0 0 0) (map snd env)
+  where
     count (NNum _)            usage = usage {numCount        = numCount        usage + 1}
     count (NApp _ _)          usage = usage {appCount        = appCount        usage + 1}
     count (NData _ _)         usage = usage {dataCount       = dataCount       usage + 1}

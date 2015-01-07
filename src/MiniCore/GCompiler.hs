@@ -34,31 +34,33 @@ primitives =
 
 -- Instruction for each binary operator
 binaryOpImpl :: [(Name, Instruction)]
-binaryOpImpl = [ ("+",  Add)
-               , ("-",  Sub)
-               , ("*",  Mul)
-               , ("/",  Div)
-               , ("==", Eq)
-               , ("/=", Ne)
-               , (">=", Ge)
-               , (">",  Gt)
-               , ("<=", Le)
-               , ("<",  Lt)
-               ]
+binaryOpImpl =
+    [ ("+",  Add)
+    , ("-",  Sub)
+    , ("*",  Mul)
+    , ("/",  Div)
+    , ("==", Eq)
+    , ("/=", Ne)
+    , (">=", Ge)
+    , (">",  Gt)
+    , ("<=", Le)
+    , ("<",  Lt)
+    ]
 
 -- Boxing instruction for each binary operator
 binaryOpBox :: [(Name, Instruction)]
-binaryOpBox = [ ("+",  Mkint)
-              , ("-",  Mkint)
-              , ("*",  Mkint)
-              , ("/",  Mkint)
-              , ("==", Mkbool)
-              , ("/=", Mkbool)
-              , (">=", Mkbool)
-              , (">",  Mkbool)
-              , ("<=", Mkbool)
-              , ("<",  Mkbool)
-              ]
+binaryOpBox =
+    [ ("+",  Mkint)
+    , ("-",  Mkint)
+    , ("*",  Mkint)
+    , ("/",  Mkint)
+    , ("==", Mkbool)
+    , ("/=", Mkbool)
+    , (">=", Mkbool)
+    , (">",  Mkbool)
+    , ("<=", Mkbool)
+    , ("<",  Mkbool)
+    ]
 
 -- Instruction for each unary operator
 unaryOpImpl :: [(Name, Instruction)]

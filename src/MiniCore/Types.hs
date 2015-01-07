@@ -17,11 +17,7 @@ runStage = runErrorT
 
 -- Run compiler stage and print result
 runStageIO :: Show a => Stage a -> IO ()
-runStageIO s = 
-    do result <- runStage s
-       case result of
-           Left error   -> putStrLn error
-           Right result -> putStrLn $ show result
+runStageIO s = runStage s >>= either putStrLn (putStrLn . show)
 
 -- Print something during execution
 trace :: (Show a) => a -> Stage ()
@@ -33,12 +29,12 @@ traceStr = liftIO . putStrLn
 
 -- Print something for stage when prompted
 traceStage :: (Show a) => String -> Bool -> a -> Stage ()
-traceStage stage cond x =
-    do let divider = "===================="
-       when cond $
-           do traceStr $ divider ++ " " ++ stage ++ " " ++ divider
-              trace x
-              traceStr $ "\n"
+traceStage stage cond x = do
+    let divider = "===================="
+    when cond $ do
+        traceStr $ divider ++ " " ++ stage ++ " " ++ divider
+        trace x
+        traceStr $ "\n"
 
 {- Core Expression types -}
 
@@ -71,8 +67,8 @@ data Expr = Var Name
           | Lambda [Name] Expr
             deriving (Show)
 
-type Name       = String
-type IsRec      = Bool
+type Name = String
+type IsRec = Bool
 
 -- Case alternative contains some value we can match on,
 -- a list of names to bind, and a body
@@ -162,13 +158,11 @@ class Types a where
     tvars :: a -> Set.Set Name
 
 instance Types Type where
-    apply s (TVar n) = case Map.lookup n s of
-                         Just t  -> t
-                         Nothing -> TVar n
+    apply s t@(TVar n) = maybe t id (Map.lookup n s)
     apply s (TCon n ts) = TCon n $ map (apply s) ts
 
     tvars (TVar n) = Set.singleton n
-    tvars (TCon n ts) = foldr Set.union Set.empty (map tvars ts)
+    tvars (TCon n ts) = Set.unions (map tvars ts)
 
 -- Special case; pretty-printed types should have the type-variables in order
 -- which tvars won't necessarily maintain
@@ -187,7 +181,7 @@ instance Types Scheme where
 -- Extend operations to lists of things that are type-like
 instance Types a => Types [a] where
     apply s = map (apply s)
-    tvars   = foldr Set.union Set.empty . map tvars
+    tvars   = Set.unions . map tvars
 
 instance Types TypeEnv where
     apply s env = Map.map (apply s) env

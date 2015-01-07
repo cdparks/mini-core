@@ -18,21 +18,21 @@ import Data.List
 
 -- Compile and run program
 run :: Flags -> String -> Stage Doc
-run flags program =
-    do parsed <- parseCore program
-       traceStage "Parsing" (traceParse flags) $ format parsed
+run flags program = do
+    parsed <- parseCore program
+    traceStage "Parsing" (traceParse flags) $ format parsed
 
-       (types, checked) <- typecheck parsed
-       traceStage "Type Inference" (traceCheck flags) $ format types
+    (types, checked) <- typecheck parsed
+    traceStage "Type Inference" (traceCheck flags) $ format types
 
-       (cons, transformed) <- transform checked
-       traceStage "Transforms" (traceTrans flags) $ format transformed
+    (cons, transformed) <- transform checked
+    traceStage "Transforms" (traceTrans flags) $ format transformed
 
-       state <- compile (cons, transformed)
-       traceStage "Compilation" (traceComp flags) $ formatDefs state
+    state <- compile (cons, transformed)
+    traceStage "Compilation" (traceComp flags) $ formatDefs state
 
-       state' <- execute (traceExec flags) (traceNext flags) state
-       return $ formatStateOutput state'
+    state' <- execute (traceExec flags) (traceNext flags) state
+    return $ formatStateOutput state'
 
 -- Which stages should print debug information?
 data Flags = Flags
@@ -97,7 +97,7 @@ getContext = do
 -- Generate context from parsed arguments
 configure :: [String] -> [Flags -> IO Flags] -> IO Context
 configure files actions = do
-    flags <- foldl (>>=) (return defaultFlags) actions
+    flags <- foldl' (>>=) (return defaultFlags) actions
     file <- case files of
         []     -> usage ["Must specify at least one file"]
         file:_ -> return file
@@ -106,8 +106,8 @@ configure files actions = do
 -- Print usage and exit
 usage :: [String] -> IO a
 usage errors = do
-    let header = "Usage: mini-core [OPTION...] file"
-    let message = usageInfo header options
+    let header  = "Usage: mini-core [OPTION...] file"
+        message = usageInfo header options
     hPutStrLn stderr $ intercalate "\n" [concat errors, message]
     exitWith ExitSuccess
 

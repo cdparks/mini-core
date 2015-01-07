@@ -9,6 +9,7 @@ import Data.Function
 import qualified Data.Map as Map
 import Control.Monad.State
 import Control.Monad.Error
+import Control.Applicative
 
 -- Maintain mapping of constructors to arity and tag
 -- and allow errors to propagate
@@ -16,21 +17,20 @@ type Gen a = StateT ConstructorState Stage a
 
 -- Generate constructor combinators and use tags in case-expressions
 transformConstructors :: Program -> Stage ([Name], Program)
-transformConstructors program =
-    do (program', state) <- runStateT run initialEnv
-       let env = cEnv state
-       return (toCons env, program')
+transformConstructors program = do
+    (program', state) <- runStateT run initialEnv
+    return (toCons $ cEnv state, program')
   where
     run = replaceDataDecls program >>= convertCases
 
 -- Strip out Data declarations and convert their constructors into super-combinators
 -- Return new program and mapping from Constructor names to tags
 replaceDataDecls :: Program -> Gen Program
-replaceDataDecls program = 
-    do let (dataDecls, combinators) = partition isData program
-           constructors = concatMap getConstructors dataDecls
-       combinators' <- mapM newCombinator constructors
-       return $ combinators' ++ combinators
+replaceDataDecls program = do
+    let (dataDecls, combinators) = partition isData program
+        constructors = concatMap getConstructors dataDecls
+    combinators' <- mapM newCombinator constructors
+    return $ combinators' ++ combinators
 
 -- After all the Data declarations have been converted, use the ConstructorEnv
 -- to convert case expressions from constructors to tags
@@ -38,8 +38,7 @@ convertCases :: Program -> Gen Program
 convertCases = mapM convert
   where
     convert (Combinator name args body) =
-        do body' <- convertExpr body
-           return $ Combinator name args body'
+        Combinator name args <$> convertExpr body
 
 -- Grab all constructors out of a single Data declaration
 getConstructors :: Declaration -> [Constructor]
@@ -76,60 +75,50 @@ initialEnv = ConstructorState
 -- with the constructor name. Raise error on duplicate constructor
 -- names.
 newCombinator :: Constructor -> Gen Declaration
-newCombinator (Constructor name components) =
-    do env <- gets cEnv
-       tag <- gets cTag
-       let arity = length components
-           args  = map (("$x"++) . show) [1..arity]
-       when (Map.member name env) $
-          throwError $ "Duplicate constructor " ++ name
-       modify $ \s -> s
-           { cTag = tag + 1
-           , cEnv = Map.insert name (tag, arity) env
-           }
-       return $ Combinator name args
-              $ foldl' App (Cons tag arity)
-              $ map Var args
+newCombinator (Constructor name components) = do
+    env <- gets cEnv
+    tag <- gets cTag
+    let arity = length components
+        args  = map (("$x"++) . show) [1..arity]
+    when (Map.member name env) $
+       throwError $ "Duplicate constructor " ++ name
+    modify $ \s -> s
+        { cTag = tag + 1
+        , cEnv = Map.insert name (tag, arity) env
+        }
+    return $ Combinator name args
+           $ foldl' App (Cons tag arity)
+           $ map Var args
 
 -- Walk each combinator body and replace Constructor names in
 -- case expressions with integer tags
 convertExpr :: Expr -> Gen Expr
 convertExpr (App e1 e2) =
-    do e1' <- convertExpr e1
-       e2' <- convertExpr e2
-       return $ App e1' e2'
+    App <$> convertExpr e1 <*> convertExpr e2
 convertExpr (Let recursive bindings body) =
-    do bindings' <- convertBindings bindings
-       body'     <- convertExpr body
-       return $ Let recursive bindings' body'
+    Let recursive <$> convertBindings bindings <*> convertExpr body
 convertExpr (Lambda args body) =
-    do body' <- convertExpr body
-       return $ Lambda args body'
+    Lambda args <$> convertExpr body
 convertExpr (Case body alts) =
-    do alts' <- convertAlts alts
-       body' <- convertExpr body
-       return $ Case body' alts'
+    Case <$> convertExpr body <*> convertAlts alts
 convertExpr x = return x
 
 -- Replace Constructor names in let-bindings
 convertBindings :: [(Name, Expr)] -> Gen [(Name, Expr)]
-convertBindings bindings =
-    do let (names, exprs) = unzip bindings
-       exprs' <- mapM convertExpr exprs
-       return $ zip names exprs'
+convertBindings bindings = do
+    let (names, exprs) = unzip bindings
+    exprs' <- mapM convertExpr exprs
+    return $ zip names exprs'
 
 -- Replace Constructor names in case alternatives
 convertAlts :: [Alt] -> Gen [Alt]
 convertAlts = mapM convertAlt
   where
-    convertAlt (PCon constructor, args, expr) =
-        do env <- gets cEnv
-           (tag, arity) <- case Map.lookup constructor env of
-                              Just x  -> return x
-                              Nothing -> throwError $ "No declaration found for " ++ constructor
-           expr' <- if length args /= arity then
-                      throwError $ "Constructor " ++ constructor ++
-                                   " has " ++ show arity ++ " components"
-                    else convertExpr expr
-           return (PTag tag, args, expr')
+    convertAlt (PCon constructor, args, expr) = do
+        env <- gets cEnv
+        (tag, arity) <- case Map.lookup constructor env of
+                Just x  -> return x
+                Nothing -> throwError $ "No declaration found for " ++ constructor
+        expr <- convertExpr expr
+        return (PTag tag, args, expr)
 
