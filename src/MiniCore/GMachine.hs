@@ -35,7 +35,7 @@ untilNext = do
     liftIO $ hFlush stdout
     line <- liftIO getLine
     case line of
-        "q"   -> throwError "Halting..."
+        "q"   -> throwError "Halting"
         ""    -> return ()
         _     -> untilNext
 
@@ -500,10 +500,10 @@ compBinary op = do
 -- Simple mark and scan garbage collection
 gc :: Transition
 gc = do
-    markFromDump       -- replace dump, update heap
-    markFromStack      -- replace stack, update heap
-    markFromGlobals    -- replace globals, update heap
-    scanHeap           -- replace heap
+    markFromDump
+    markFromStack
+    markFromGlobals
+    scanHeap
 
 -- Mark all root addresses in dump's stack component
 markFromDump :: Transition
@@ -569,7 +569,7 @@ scanHeap = do
     heap <- gets gmHeap
     let addresses = hAddresses heap
         heap'     = foldr scanFrom heap addresses
-    modify $ \s -> s { gmHeap = heap' }
+    modify $ \s -> s { gmHeap = hIncreaseMax heap' }
   where
     scanFrom addr heap = case hLoad heap addr of
         NMarked node -> hUpdate heap addr node
