@@ -59,7 +59,7 @@ doAdmin = do
     heap <- gets gmHeap
     when (hTooLarge heap) $ do
         incCollections
-        modify gc
+        gc
 
 -- Increment number of steps
 incSteps :: Transition
@@ -497,86 +497,80 @@ compBinary op = do
         True  -> pushVStack 2 -- True tag
         False -> pushVStack 1 -- False tag
 
--- Garbage collection state is a function of
--- the current heap and (usually) a machine component
-type GCState a = State GMHeap a
-
 -- Simple mark and scan garbage collection
-gc :: GMState -> GMState
-gc state = state' { gmHeap = heap' }
-  where
-    state' = evalState (mark state) $ gmHeap state
-    heap'  = hIncreaseMax $ scanHeap $ gmHeap state'
-
--- Walk machine state marking roots and removing indirections
-mark :: GMState -> GCState GMState
-mark state = do
-    dump <- markFromDump $ gmDump state
-    stack <- markFromStack $ gmStack state
-    globals <- markFromGlobals $ gmGlobals state
-    heap <- get
-    return state
-        { gmHeap = heap
-        , gmDump = dump
-        , gmStack = stack
-        , gmGlobals = globals
-        }
+gc :: Transition
+gc = do
+    markFromDump       -- replace dump, update heap
+    markFromStack      -- replace stack, update heap
+    markFromGlobals    -- replace globals, update heap
+    scanHeap           -- replace heap
 
 -- Mark all root addresses in dump's stack component
-markFromDump :: GMDump -> GCState GMDump
-markFromDump = mapM $ \(code, stack, vstack) -> do
-    stack' <- markFromStack stack
-    return (code, stack', vstack)
+markFromDump :: Transition
+markFromDump = do
+    dump <- gets gmDump >>= mapM mark
+    modify $ \s -> s { gmDump = dump }
+  where
+    mark (code, stack, vstack) = do
+        stack' <- mapM markFrom stack
+        return (code, stack', vstack)
 
 -- Mark all root addresses in stack
-markFromStack :: GMStack -> GCState GMStack
-markFromStack = mapM markFrom
+markFromStack :: Transition
+markFromStack = do
+    stack <- gets gmStack >>= mapM markFrom
+    modify $ \s -> s { gmStack = stack }
 
 -- Mark all root addresses in globals
-markFromGlobals :: GMGlobals -> GCState GMGlobals
-markFromGlobals = mapM $ \(name, addr) -> do
-    addr' <- markFrom addr
-    return (name, addr')
+markFromGlobals :: Transition
+markFromGlobals = do
+    globals <- gets gmGlobals >>= mapM mark
+    modify $ \s -> s { gmGlobals = globals }
+  where
+    mark (name, addr) = do
+        addr' <- markFrom addr
+        return (name, addr')
+
+writeHeap :: Addr -> Node -> Eval Addr
+writeHeap addr node = do
+    heap <- gets gmHeap
+    modify $ \s -> s { gmHeap = hUpdate heap addr node }
+    return addr
 
 -- Start from address and mark all reachable addresses from it. Replace any
 -- pointer nodes by what they point to.
-markFrom :: Addr -> GCState Addr
+markFrom :: Addr -> Eval Addr
 markFrom addr = do
-    heap <- get
+    heap <- gets gmHeap
     case hLoad heap addr of
-        node@(NNum _) -> do
-            modify $ \s -> hUpdate s addr $ NMarked node
-            return addr
+        node@(NNum _) -> writeHeap addr $ NMarked node
         node@(NApp a1 a2) -> do
             -- Visit this node to avoid looping
-            modify $ \s -> hUpdate s addr $ NMarked node
+            _ <- writeHeap addr $ NMarked node
             a1' <- markFrom a1
             a2' <- markFrom a2
             -- Update addresses that may have changed
-            modify $ \s -> hUpdate s addr $ NMarked $ NApp a1' a2'
-            return addr
-        node@(NGlobal _ _) -> do
-            modify $ \s -> hUpdate heap addr $ NMarked node
-            return addr
+            writeHeap addr $ NMarked $ NApp a1' a2'
+        node@(NGlobal _ _) -> writeHeap addr $ NMarked node
         node@(NPointer a)
-            | isNullAddr a -> do
-                modify $ \s -> hUpdate heap addr $ NMarked node
-                return addr
+            | isNullAddr a -> writeHeap addr $ NMarked node
             | otherwise    -> markFrom a
         node@(NConstructor tag addrs) -> do
             -- Visit this node to avoid looping
-            modify $ \s -> hUpdate s addr $ NMarked node
+            _ <- writeHeap addr $ NMarked node
             addrs' <- mapM markFrom addrs
             -- Update addresses that may have changed
-            modify $ \s -> hUpdate s addr $ NMarked $ NConstructor tag addrs'
-            return addr
+            writeHeap addr $ NMarked $ NConstructor tag addrs'
         _ -> return addr
 
 -- Scan all nodes freeing unmarked nodes and unmarking marked nodes
-scanHeap :: GMHeap -> GMHeap
-scanHeap heap = foldr scanFrom heap addresses
+scanHeap :: Transition
+scanHeap = do
+    heap <- gets gmHeap
+    let addresses = hAddresses heap
+        heap'     = foldr scanFrom heap addresses
+    modify $ \s -> s { gmHeap = heap' }
   where
-    addresses = hAddresses heap
     scanFrom addr heap = case hLoad heap addr of
         NMarked node -> hUpdate heap addr node
         _            -> hFree heap addr

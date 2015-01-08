@@ -278,7 +278,7 @@ type GMEnvironment = [(Name, Int)]
 
 -- Tally information about machine state
 data GMStats = GMStats
-    { gmSteps :: Int
+    { gmSteps       :: Int
     , gmCollections :: Int
     }
 
