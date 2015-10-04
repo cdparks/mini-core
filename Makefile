@@ -1,7 +1,6 @@
 MINI-CORE = stack exec mini-core
 
 test: mini-core
-	stack path
 	$(MINI-CORE) -- examples/arithmetic.core  | diff tests/arithmetic.out -
 	$(MINI-CORE) -- examples/factorial.core   | diff tests/factorial.out -
 	$(MINI-CORE) -- examples/fibonacci.core   | diff tests/fibonacci.out -

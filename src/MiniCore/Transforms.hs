@@ -1,6 +1,6 @@
-module MiniCore.Transforms (
-    transform
-) where
+module MiniCore.Transforms
+  ( transform
+  ) where
 
 import MiniCore.Types
 import MiniCore.Transforms.Constructors
@@ -12,8 +12,8 @@ import MiniCore.Transforms.BinOps
 -- and simplified program
 transform :: Program -> Stage ([Name], Program)
 transform program = do
-    noBinOps <- removeBinOps program
-    (cons, noCons) <- transformConstructors noBinOps
-    noLambdas <- liftLambdas noCons
-    return (cons, noLambdas)
+  noBinOps <- removeBinOps program
+  (cons, noCons) <- transformConstructors noBinOps
+  noLambdas <- liftLambdas noCons
+  return (cons, noLambdas)
 

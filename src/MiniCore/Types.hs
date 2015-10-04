@@ -57,11 +57,11 @@ traceStr = liftIO . putStrLn
 -- Print something for stage when prompted
 traceStage :: (Show a) => String -> Bool -> a -> Stage ()
 traceStage stage cond x = do
-    let divider = "===================="
-    when cond $ do
-        traceStr $ divider ++ " " ++ stage ++ " " ++ divider
-        trace x
-        traceStr $ "\n"
+  let divider = "===================="
+  when cond $ do
+    traceStr $ divider ++ " " ++ stage ++ " " ++ divider
+    trace x
+    traceStr $ "\n"
 
 {- Core Expression types -}
 
@@ -69,9 +69,10 @@ traceStage stage cond x = do
 type Program = [Declaration]
 
 -- A declaration is a super-combinator or a data-type declaration
-data Declaration = Combinator Name [Name] Expr
-                 | Data Name [Name] [Constructor]
-                   deriving Show
+data Declaration
+  = Combinator Name [Name] Expr
+  | Data Name [Name] [Constructor]
+  deriving Show
 
 -- Is declaration a Data declaration or a Combinator?
 isData :: Declaration -> Bool
@@ -79,20 +80,22 @@ isData (Data {}) = True
 isData _         = False
 
 -- A constructor has a name and a list of components
-data Constructor = Constructor Name [Type]
-                   deriving Show
+data Constructor
+  = Constructor Name [Type]
+  deriving Show
 
 -- An expression is a variable, number, Cons (Pack) operation, application,
 -- let, case, or lambda expression.
-data Expr = Var Name
-          | Num Int
-          | Cons Int Int
-          | BinOp Name Expr Expr
-          | App Expr Expr
-          | Let IsRec [(Name, Expr)] Expr
-          | Case Expr [Alt]
-          | Lambda [Name] Expr
-            deriving (Show)
+data Expr
+  = Var Name
+  | Num Int
+  | Cons Int Int
+  | BinOp Name Expr Expr
+  | App Expr Expr
+  | Let IsRec [(Name, Expr)] Expr
+  | Case Expr [Alt]
+  | Lambda [Name] Expr
+  deriving (Show)
 
 type Name = String
 type IsRec = Bool
@@ -102,9 +105,10 @@ type IsRec = Bool
 type Alt = (Pattern, [Name], Expr)
 
 -- Pattern is a constructor name or an integer tag (internal representation)
-data Pattern = PCon Name
-             | PTag Int
-               deriving Show
+data Pattern
+  = PCon Name
+  | PTag Int
+  deriving Show
 
 -- Get binders and bindees
 bindersOf :: [(a, b)] -> [a]
@@ -115,35 +119,37 @@ bindeesOf = map snd
 
 -- Map binary ops to precedence
 precByOp :: [(Name, Int)]
-precByOp = [ ("$",  0) -- Low-precedence infix application
-           , ("||", 2) -- Boolean OR
-           , ("&&", 3) -- Boolean AND
-           , ("==", 4) -- Comparators
-           , ("/=", 4)
-           , ("<",  4)
-           , (">",  4)
-           , ("<=", 4)
-           , (">=", 4)
-           , ("+",  6) -- Arithmetic operators
-           , ("-",  6)
-           , ("*",  7)
-           , ("/",  7)
-           , (".",  9) -- Function composition
-           ]
+precByOp =
+  [ ("$",  0) -- Low-precedence infix application
+  , ("||", 2) -- Boolean OR
+  , ("&&", 3) -- Boolean AND
+  , ("==", 4) -- Comparators
+  , ("/=", 4)
+  , ("<",  4)
+  , (">",  4)
+  , ("<=", 4)
+  , (">=", 4)
+  , ("+",  6) -- Arithmetic operators
+  , ("-",  6)
+  , ("*",  7)
+  , ("/",  7)
+  , (".",  9) -- Function composition
+  ]
 
 {- Annotated Expression types -}
 
 --An AExpr is an expression annotated with some extra useful
 --information. a is the type of binders in expressions, and b
 --is the type of annotations.
-data AExpr a b = AVar Name
-               | ANum Int
-               | ACons Int Int
-               | AApp (Annotated a b) (Annotated a b)
-               | ALet IsRec [ADef a b] (Annotated a b)
-               | ACase (Annotated a b) [AAlt a b]
-               | ALambda [a] (Annotated a b)
-                 deriving (Show)
+data AExpr a b
+  = AVar Name
+  | ANum Int
+  | ACons Int Int
+  | AApp (Annotated a b) (Annotated a b)
+  | ALet IsRec [ADef a b] (Annotated a b)
+  | ACase (Annotated a b) [AAlt a b]
+  | ALambda [a] (Annotated a b)
+  deriving (Show)
 
 type Annotated a b = (b, AExpr a b)
 type ADef a b      = (a, Annotated a b)
@@ -153,13 +159,15 @@ type AProgram a b  = [(Name, [a], Annotated a b)]
 {- Types for type checking -}
 
 -- Concrete type
-data Type = TVar Name
-          | TCon Name [Type]
-            deriving (Show, Eq)
+data Type
+  = TVar Name
+  | TCon Name [Type]
+  deriving (Show, Eq)
 
 -- Universally quantified types
-data Scheme = Scheme [Name] Type
-              deriving (Show, Eq)
+data Scheme
+  = Scheme [Name] Type
+  deriving (Show, Eq)
 
 -- Constructors for built-in types
 intTy = TCon "Int" []
@@ -181,15 +189,15 @@ type TypeEnv = Map.Map Name Scheme
 -- If something is type-like, we can apply a substitution to it
 -- and get a set of its type-variables
 class Types a where
-    apply :: Subst -> a -> a
-    tvars :: a -> Set.Set Name
+  apply :: Subst -> a -> a
+  tvars :: a -> Set.Set Name
 
 instance Types Type where
-    apply s t@(TVar n) = maybe t id (Map.lookup n s)
-    apply s (TCon n ts) = TCon n $ map (apply s) ts
+  apply s t@(TVar n) = maybe t id (Map.lookup n s)
+  apply s (TCon n ts) = TCon n $ map (apply s) ts
 
-    tvars (TVar n) = Set.singleton n
-    tvars (TCon n ts) = Set.unions (map tvars ts)
+  tvars (TVar n) = Set.singleton n
+  tvars (TCon n ts) = Set.unions (map tvars ts)
 
 -- Special case; pretty-printed types should have the type-variables in order
 -- which tvars won't necessarily maintain
@@ -199,26 +207,27 @@ tvarsOrdered (TCon n ts) = foldr List.union [] (map tvarsOrdered ts)
 
 -- tvars doesn't return universally quantified type-variables
 instance Types Scheme where
-    apply s (Scheme vs t) =
-        let s' = foldr Map.delete s vs
-        in Scheme vs (apply s' t)
+  apply s (Scheme vs t) =
+    let s' = foldr Map.delete s vs
+    in Scheme vs (apply s' t)
 
-    tvars (Scheme vs t) = tvars t `Set.difference` Set.fromList vs
+  tvars (Scheme vs t) = tvars t `Set.difference` Set.fromList vs
 
 -- Extend operations to lists of things that are type-like
 instance Types a => Types [a] where
-    apply s = map (apply s)
-    tvars   = Set.unions . map tvars
+  apply s = map (apply s)
+  tvars   = Set.unions . map tvars
 
 instance Types TypeEnv where
-    apply s env = Map.map (apply s) env
-    tvars env = tvars (Map.elems env)
+  apply s env = Map.map (apply s) env
+  tvars env = tvars (Map.elems env)
 
 -- Compose substitions by applying s1 to s2 and then
 -- taking their union
 scomp :: Subst -> Subst -> Subst
-scomp s1 s2 = let s2' = Map.map (apply s1) s2
-              in s2' `Map.union` s1
+scomp s1 s2 =
+  let s2' = Map.map (apply s1) s2
+  in s2' `Map.union` s1
 
 {- Heap types -}
 
@@ -226,11 +235,11 @@ type Addr = Int
 
 -- (size, max-size, free-list, environment mapping addresses to live objects)
 data Heap a = Heap
-    { hSize        :: Int
-    , hMaxSize     :: Int
-    , hFreeList    :: [Addr]
-    , hEnvironment :: [(Addr, a)]
-    }
+  { hSize        :: Int
+  , hMaxSize     :: Int
+  , hFreeList    :: [Addr]
+  , hEnvironment :: [(Addr, a)]
+  }
 
 {- G-Compiler/Machine types -}
 
@@ -240,40 +249,41 @@ type GMOutput = [String]
 -- Code is just a list of instructions
 type GMCode = [Instruction]
 
-data Instruction = Pushglobal Name          -- Push address of global on stack
-                 | Pushint Int              -- Push address of integer on stack
-                 | Pushbasic Int            -- Push unboxed integer on V-stack
-                 | Push Int                 -- Push address of local variable on stack
-                 | Pop Int                  -- Pop n items from stack
-                 | Slide Int                -- Pop n items from stack leaving top-of-stack
-                 | Alloc Int                -- Allocate n pointers and put addresses on stack
-                 | Mkap                     -- Make application node out of top two address
-                 | Mkint                    -- Box integer on top of V-stack into heap and onto stack
-                 | Mkbool                   -- Box Boolean on top of V-stack into heap and onto stack
-                 | Get                      -- Put top-of-stack on V-stack
-                 | Update Int               -- Replace root of redex with pointer to value
-                 | Eval                     -- Evaluate top-of-stack to Weak Head Normal Form
-                 | Unwind                   -- Unwind application nodes onto stack
-                 | Add                      -- Arithmetic instructions
-                 | Sub
-                 | Mul
-                 | Div
-                 | Neg
-                 | Eq                       -- Relational instructions
-                 | Ne
-                 | Lt
-                 | Le
-                 | Gt
-                 | Ge
-                 | Pack Int Int             -- Build NConstructor node
-                 | Casejump [(Int, GMCode)] -- Use tag of node on top-of-stack to jump to case-alternative
-                 | Split Int                -- Destructure constructor into components for alternative-body
-                 | Cond GMCode GMCode       -- Simplified case-jump. Check top-of-V-stack to branch
-                 | Print                    -- Add value to output
-                 | LParen                   -- Write open paren to output
-                 | RParen                   -- Write close paren to output
-                 | Space                    -- Write space to output
-                   deriving Show
+data Instruction
+  = Pushglobal Name          -- Push address of global on stack
+  | Pushint Int              -- Push address of integer on stack
+  | Pushbasic Int            -- Push unboxed integer on V-stack
+  | Push Int                 -- Push address of local variable on stack
+  | Pop Int                  -- Pop n items from stack
+  | Slide Int                -- Pop n items from stack leaving top-of-stack
+  | Alloc Int                -- Allocate n pointers and put addresses on stack
+  | Mkap                     -- Make application node out of top two address
+  | Mkint                    -- Box integer on top of V-stack into heap and onto stack
+  | Mkbool                   -- Box Boolean on top of V-stack into heap and onto stack
+  | Get                      -- Put top-of-stack on V-stack
+  | Update Int               -- Replace root of redex with pointer to value
+  | Eval                     -- Evaluate top-of-stack to Weak Head Normal Form
+  | Unwind                   -- Unwind application nodes onto stack
+  | Add                      -- Arithmetic instructions
+  | Sub
+  | Mul
+  | Div
+  | Neg
+  | Eq                       -- Relational instructions
+  | Ne
+  | Lt
+  | Le
+  | Gt
+  | Ge
+  | Pack Int Int             -- Build NConstructor node
+  | Casejump [(Int, GMCode)] -- Use tag of node on top-of-stack to jump to case-alternative
+  | Split Int                -- Destructure constructor into components for alternative-body
+  | Cond GMCode GMCode       -- Simplified case-jump. Check top-of-V-stack to branch
+  | Print                    -- Add value to output
+  | LParen                   -- Write open paren to output
+  | RParen                   -- Write close paren to output
+  | Space                    -- Write space to output
+  deriving Show
 
 -- Execution stack
 type GMStack = [Addr]
@@ -289,13 +299,14 @@ type GMDump = [(GMCode, GMStack, GMVStack)]
 type GMHeap = Heap Node
 
 -- Heap data
-data Node = NNum Int
-          | NApp Addr Addr
-          | NGlobal Int GMCode
-          | NPointer Addr
-          | NConstructor Int [Addr]
-          | NMarked Node
-            deriving Show
+data Node
+  = NNum Int
+  | NApp Addr Addr
+  | NGlobal Int GMCode
+  | NPointer Addr
+  | NConstructor Int [Addr]
+  | NMarked Node
+  deriving Show
 
 -- Global environment maps names to addresses
 type GMGlobals = [(Name, Addr)]
@@ -305,27 +316,27 @@ type GMEnvironment = [(Name, Int)]
 
 -- Tally information about machine state
 data GMStats = GMStats
-    { gmSteps       :: Int
-    , gmCollections :: Int
-    }
+  { gmSteps       :: Int
+  , gmCollections :: Int
+  }
 
 -- Names of constructors in tag order
 type GMCons = [Name]
 
 -- Complete machine state
 data GMState = GMState
-    { gmOutput  :: GMOutput
-    , gmCode    :: GMCode
-    , gmStack   :: GMStack
-    , gmDump    :: GMDump
-    , gmVStack  :: GMVStack
-    , gmHeap    :: GMHeap
-    , gmGlobals :: GMGlobals
-    , gmStats   :: GMStats
-    , gmCons    :: GMCons
-    }
+  { gmOutput  :: GMOutput
+  , gmCode    :: GMCode
+  , gmStack   :: GMStack
+  , gmDump    :: GMDump
+  , gmVStack  :: GMVStack
+  , gmHeap    :: GMHeap
+  , gmGlobals :: GMGlobals
+  , gmStats   :: GMStats
+  , gmCons    :: GMCons
+  }
 
 -- Simple instance for now
 instance Show GMState where
-    show _ = "GMState#"
+  show _ = "GMState#"
 
