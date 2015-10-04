@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts #-}
+
 module MiniCore.GMachine (
     execute,
     isFinal
@@ -9,9 +11,11 @@ import MiniCore.Heap
 
 import Data.List
 import Data.Maybe
+import Control.Monad.Trans (liftIO)
 import Control.Monad.State
-import Control.Monad.Error
+import Control.Monad.Except
 import System.IO
+import Control.Monad
 import Control.Applicative
 
 -- Evaluation monad transformer
@@ -35,7 +39,7 @@ untilNext = do
     liftIO $ hFlush stdout
     line <- liftIO getLine
     case line of
-        "q"   -> throwError "Halting"
+        "q"   -> runtimeError "Halting"
         ""    -> return ()
         _     -> untilNext
 
@@ -44,7 +48,7 @@ evaluate :: Bool -> Bool -> Inspect
 evaluate loud interactive = do
     state <- get
     when (loud || interactive) $
-        lift $ trace $ formatState state
+        lift (trace (formatState state))
     when interactive $
         untilNext
     if isFinal state
@@ -240,7 +244,7 @@ pack :: Int -> Int -> Transition
 pack tag arity = do
     stack <- gets gmStack
     when (length stack < arity) $
-        throwError "Not enough arguments to saturate constructor"
+        runtimeError "Not enough arguments to saturate constructor"
     let (args, stack') = splitAt arity stack
     addr <- gmAlloc $ NConstructor tag args
     modify $ \s -> s { gmStack = addr:stack' }
@@ -255,7 +259,7 @@ casejump alts = do
     cons <- gets gmCons
     case lookup tag alts of
         Just branch -> modify $ \s -> s { gmCode = branch ++ gmCode s }
-        Nothing     -> throwError $ "No case for constructor " ++ cons !! tag
+        Nothing     -> runtimeError ("No case for constructor " ++ cons !! tag)
 
 -- Simple branch using top-of-V-stack
 -- If top-of-V-stack is 2 (True tag):
@@ -270,7 +274,7 @@ cond consequent alternative = do
     branch <- case condition of
         1 -> return alternative
         2 -> return consequent
-        _ -> throwError $ "Non-Boolean " ++ show condition ++ " used in Boolean context"
+        _ -> runtimeError ("Non-Boolean " ++ show condition ++ " used in Boolean context")
     modify $ \s -> s { gmCode = branch ++ gmCode s, gmVStack = vstack }
 
 -- Destructure constructor onto stack
@@ -281,7 +285,7 @@ split n = do
     (addr:stack) <- gets gmStack
     (NConstructor _ args) <- gmLoad addr
     when (length args /= n) $
-        throwError $ "Cannot destructure constructor into " ++ show n ++ " components"
+        runtimeError ("Cannot destructure constructor into " ++ show n ++ " components")
     modify $ \s -> s { gmStack = args ++ stack }
 
 -- Print numbers and constructor components by adding values to output list
@@ -316,7 +320,7 @@ print' = do
     doPrint (NApp _ _) =
         modify $ \s -> s { gmOutput = "<function>":gmOutput s }
 
-    doPrint x = throwError $ "tried to print " ++ show x
+    doPrint x = runtimeError ("tried to print " ++ show x)
 
     printN n = concat $ take n $ repeat [Space, Eval, Print]
 
@@ -366,7 +370,7 @@ get' = do
     unboxed <- case node of
         (NNum n)            -> return n
         (NConstructor b []) -> return b
-        _                   -> throwError $ "Cannot put node " ++ show node ++ " on V-stack"
+        _                   -> runtimeError ("Cannot put node " ++ show node ++ " on V-stack")
     pushVStack unboxed
 
 -- Put bottom of stack, V-stack, and instructions on dump.
@@ -475,7 +479,7 @@ getArg addr = do
     node <- gmLoad addr
     case node of
         NApp _ arg -> return arg
-        _          -> throwError "Attempted to load argument to non-application node"
+        _          -> runtimeError ("Attempted to load argument to non-application node")
 
 -- Generate a state transition from a unary arithmetic function
 arithUnary :: (Int -> Int) -> Transition

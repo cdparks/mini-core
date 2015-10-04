@@ -8,7 +8,7 @@ import Data.List
 import Data.Function
 import qualified Data.Map as Map
 import Control.Monad.State
-import Control.Monad.Error
+import Control.Monad.Except
 import Control.Applicative
 
 -- Maintain mapping of constructors to arity and tag
@@ -81,7 +81,7 @@ newCombinator (Constructor name components) = do
     let arity = length components
         args  = map (("$x"++) . show) [1..arity]
     when (Map.member name env) $
-       throwError $ "Duplicate constructor " ++ name
+       typeError ("Duplicate constructor " ++ name)
     modify $ \s -> s
         { cTag = tag + 1
         , cEnv = Map.insert name (tag, arity) env
@@ -118,7 +118,7 @@ convertAlts = mapM convertAlt
         env <- gets cEnv
         (tag, arity) <- case Map.lookup constructor env of
                 Just x  -> return x
-                Nothing -> throwError $ "No declaration found for " ++ constructor
+                Nothing -> typeError ("No declaration found for " ++ constructor)
         expr <- convertExpr expr
         return (PTag tag, args, expr)
 

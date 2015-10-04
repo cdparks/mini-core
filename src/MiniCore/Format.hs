@@ -1,4 +1,4 @@
-{-# LANGUAGE OverlappingInstances, TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
 
 module MiniCore.Format (
     format,

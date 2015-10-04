@@ -1,23 +1,50 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, FlexibleContexts #-}
 
 module MiniCore.Types where
 
-import Control.Monad.Error
+import Control.Monad
+import Control.Applicative
+import Control.Monad.Trans (liftIO)
+import Control.Monad.Except
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.List as List
 
+data CoreError
+  = ParseError String
+  | TypeError String
+  | RuntimeError String
+  deriving (Eq)
+
+instance Show CoreError where
+  show e = case e of
+    ParseError message ->
+      "Parse Error: " ++ message
+    TypeError message ->
+      "Type Error: " ++ message
+    RuntimeError message ->
+      "Runtime Error: " ++ message
+
+parseError :: (MonadError CoreError m) => String -> m a
+parseError = throwError . ParseError
+
+typeError :: (MonadError CoreError m) => String -> m a
+typeError = throwError . TypeError
+
+runtimeError :: (MonadError CoreError m) => String -> m a
+runtimeError = throwError . RuntimeError
+
 -- Represent a stage in the compiler as something that
 -- fails with an error message or produces a value
-type Stage = ErrorT String IO
+type Stage = ExceptT CoreError IO
 
 -- Run compiler stage
-runStage :: Stage a -> IO (Either String a)
-runStage = runErrorT
+runStage :: Stage a -> IO (Either CoreError a)
+runStage = runExceptT
 
 -- Run compiler stage and print result
 runStageIO :: Show a => Stage a -> IO ()
-runStageIO s = runStage s >>= either putStrLn (putStrLn . show)
+runStageIO s = runStage s >>= either (putStrLn . show) (putStrLn . show)
 
 -- Print something during execution
 trace :: (Show a) => a -> Stage ()

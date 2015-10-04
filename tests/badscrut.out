@@ -1,4 +1,4 @@
-Type Error:
+Type Error: 
 	Cannot unify 'List' and 'Bool'
 in:
 	main = f True

@@ -1,4 +1,4 @@
-Type Error:
+Type Error: 
 	Cannot unify 'Int' and 'Bool'
 in:
 	main = f id (Pair 1 True)

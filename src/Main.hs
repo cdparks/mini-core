@@ -13,7 +13,6 @@ import System.Console.GetOpt
 import System.Environment
 import System.Exit
 import Control.Monad
-import Control.Monad.State
 import Data.List
 
 -- Compile and run program

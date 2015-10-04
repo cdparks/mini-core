@@ -8,7 +8,7 @@ import Text.ParserCombinators.Parsec hiding ((<|>), many)
 import Text.ParserCombinators.Parsec.Expr
 import Text.ParserCombinators.Parsec.Language
 import qualified Text.ParserCombinators.Parsec.Token as Token
-import Control.Monad.Error
+import Control.Monad.Except
 import Control.Applicative
 import Data.List
 
@@ -59,7 +59,7 @@ uppercased = do
 -- Parser entry point
 parseCore :: String -> Stage Program
 parseCore s = case parse pCore "core" s of
-    Left e  -> throwError $ "ParseError: " ++ show e
+    Left e  -> parseError (show e)
     Right r -> return r
 
 -- Program -> Declaration*

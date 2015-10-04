@@ -13,9 +13,8 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.List as List
 import Control.Applicative
-import Control.Monad.Error
+import Control.Monad.Except
 import Control.Monad.State
-import Control.Monad.Identity
 
 -- Public compiler stage
 typecheck :: Program -> Stage ([(Name, Scheme)], Program)
@@ -95,7 +94,7 @@ raise msg = do
     let error = case decl of
           Just decl -> msg ++ "\nin:\n\t" ++ show (format decl)
           Nothing   -> msg
-    throwError $ "Type Error:\n\t" ++ error
+    typeError ("\n\t" ++ error)
 
 {- Utilities -}
 
